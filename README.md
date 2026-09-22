@@ -71,6 +71,13 @@ Die Presets zeigen einzelne Instanzen und Ketten – auf dieser Instanz ist die 
 - **Hill Climbing mit Neustarts** (`sa_evaluation.py`): Abstiege aus zufälligen Startlösungen, bis die bewerteten Nachbarn das Budget erreichen; der erste läuft immer zu Ende, weitere mit dem Rest des Budgets (die Demo bewertet nach jedem Zug alle Nachbarn neu – ohne Nachbarschaftslisten wäre Hill Climbing bei gleichem Budget stärker).
 - **Auswertung** (`sa_evaluation.py`): Kennzahlen, Urteil, Sweeps über feste Instanzen × Ketten, Temperaturfenster, Skalierung, Streuung.
 
+## Nachtrag (2026-09-22): der Vergleich gilt nur für dieses Hill Climbing
+
+Der Vergleich mit Hill Climbing auf dieser Seite bewertet nach jedem Zug **alle** Nachbarn neu (keine Nachbarschaftslisten, keine Don't-Look-Bits – bewusst, siehe Grenzen-Tabelle unten und die der [hill-climbing-demo](../hill-climbing-demo)). Eine Messreihe (kein eigenes Demo-Stück; vor dem geplanten Lin-Kernighan-Stück) mit einem **Kandidatenlisten- und Don't-Look-Bit-2-opt** (Nachbarschaft auf die 5 nächsten Knoten je Stopp beschränkt, Warteschlange nur über Knoten mit geänderten Kanten) zeigt:
+ein Abstieg erreicht bei 60 Stopps dieselbe Güte wie im Standardfall oben (≈7 % über der Schranke) mit nur noch **rund 650 statt 74 000 bewerteten Nachbarn – dem Hundertfachen weniger**. Bei gleichem Budget wie in der Tabelle oben (200 Tausend / 1 Million) reicht das für **312 / 1 561 Neustarts statt 3.2 / 14**, und Hill Climbing mit Neustarts erreicht damit **0.7 % / 0.6 %** über der Schranke – **knapp besser als Simulated Annealing** in dieser Tabelle (1.4 % / 0.7 %).
+Die Kandidatenliste kostet Exaktheit (bei 60 Stopps sind nur noch 51 % der Abstiege echte 2-opt-Optima, gegen 100 % auf kleinen Testinstanzen), aber messbar keine Güte. **Die Kernaussage dieser Seite gilt also nur für die hier bewusst einfach gehaltene Hill-Climbing-Implementierung**, nicht für Hill Climbing an sich: der eigentliche Unterschied zwischen den beiden Läufen war nicht "Temperatur schlägt reines Verbessern", sondern "billige gegen teure Bewertungen".
+Die Demo selbst bleibt unverändert (das ist bewusst die einfache, gut lesbare Fassung); Kandidatenlisten und Don't-Look-Bits sind das Thema eines späteren Stücks der Nachbarschafts-Linie.
+
 ## Was nicht funktioniert hat / Grenzen
 
 - **Vorab-Vermutungen (vor dem Bau gemessen):** (1) "Bei gleichem Budget schlägt Simulated Annealing das Hill Climbing" – **bestätigt**, aber mit Einschränkung: nicht bei 10 Tausend Vorschlägen (ein Abstieg braucht 74 Tausend), und **bei 2-opt + Or-opt und 1 Million Vorschlägen fast gleichauf** mit Neustarts (0.7 % gegen 1.0 %).
