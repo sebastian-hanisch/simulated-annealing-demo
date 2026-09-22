@@ -316,3 +316,52 @@ def test_dlb_beats_sa_at_200k_and_ties_at_1m():
     sa_200k, sa_1m = cfg(budget=200000)["gap"], cfg(budget=1000000)["gap"]
     assert rows[200000] < sa_200k - 0.3                             # deutlich besser
     assert abs(rows[1000000] - sa_1m) < 0.3                         # praktisch gleichauf
+
+
+# --- Annahmeregel: Metropolis / Threshold Accepting / Great Deluge / Late Acceptance Hill Climbing -----------------------------------------
+# Messreihe 2026-09-22 (siehe sa_constants.py, Abschnitt "Annahmeregel"): Standardfall, 200 Tausend Vorschlaege, 5 Instanzen x 3 Ketten.
+
+
+def test_rule_comparison_headline_numbers():
+    m = cfg(rule="metropolis")
+    lahc = cfg(rule="lahc", lahc_length=C.DEFAULT_LAHC_L)
+    ta = cfg(rule="threshold")
+    gd = cfg(rule="great_deluge", gd_t0=C.DEFAULT_GD_T0, gd_t_end=C.DEFAULT_GD_T_END)
+    near(m["gap"], 1.4, 0.6)
+    near(lahc["gap"], 2.2, 1.2)
+    near(ta["gap"], 2.7, 1.3)
+    near(gd["gap"], 3.2, 1.5)
+    near(m["hcr"], 4.9, 0.9)
+    # alle vier schlagen Hill Climbing mit Neustarts bei gleichem Budget klar
+    for row in (m, lahc, ta, gd):
+        assert row["gap"] < row["hcr"] - 0.8
+    # der Zufall (Metropolis) bringt gegenueber den drei deterministischen Regeln noch einen Vorsprung
+    assert m["gap"] < lahc["gap"] < ta["gap"] + 1.0
+
+
+@pytest.mark.parametrize("L,gap,tol", [(100, 4.0, 2.0), (300, 3.9, 2.0), (500, 2.2, 1.5), (700, 15.4, 4.0), (1000, 44.2, 8.0)])
+def test_lahc_l_sweep_has_a_cliff_past_about_six_hundred(L, gap, tol):
+    near(cfg(rule="lahc", lahc_length=L)["gap"], gap, tol)
+
+
+def test_lahc_large_l_is_far_worse_than_the_calibrated_default_and_still_never_worse_than_a_plain_hill_climbing_descent():
+    small = cfg(rule="lahc", lahc_length=500)
+    large = cfg(rule="lahc", lahc_length=3000)
+    assert large["gap"] > small["gap"] + 20.0                              # der Ringpuffer "kommt nicht mehr nach" - kein Fehler, eine echte Grenze
+    assert large["hc"] < 10.0                                              # zum Vergleich: ein einzelner Hill-Climbing-Abstieg bleibt in seiner ueblichen Groessenordnung
+
+
+def test_great_deluge_default_beats_a_too_small_anfangsabstand():
+    good = cfg(rule="great_deluge", gd_t0=300.0, gd_t_end=2.0)
+    bad = cfg(rule="great_deluge", gd_t0=280.0, gd_t_end=2.0)
+    near(good["gap"], 3.2, 1.5)
+    assert bad["gap_sd"] > good["gap_sd"] or bad["gap"] > good["gap"]       # zu knapp am Startabstand: schwaecher und/oder wechselhafter
+
+
+def test_great_deluge_initial_level_is_auto_lifted_to_the_start_length_at_a_larger_instance():
+    # bei n=200 deckt der kalibrierte Anfangsabstand (300 Einheiten, fuer n=60 bemessen) die tatsaechliche Startluecke (~1850 Einheiten) nicht mehr -
+    # ohne die Anhebung in sa_algorithm.anneal() waere das Ergebnis eine Grössenordnung schlechter als Metropolis bei gleichem Budget
+    a_gd = ev.analyse(ev.replace(ev.Settings(n=200, budget=200000, rule="great_deluge", gd_t0=300.0, gd_t_end=2.0), seed=100000, chain_seed=0), keep_snapshots=False, with_hc=False)
+    a_m = ev.analyse(ev.replace(ev.Settings(n=200, budget=200000), seed=100000, chain_seed=0), keep_snapshots=False, with_hc=False)
+    assert a_gd.gap > a_m.gap + 50.0                                       # dokumentierte Grenze: die Kalibrierung gilt fuer n=60, nicht automatisch fuer groessere Instanzen
+    assert a_gd.gap < 2000.0                                               # aber nicht mehr unbegrenzt schlecht (Anhebung auf die Startlaenge greift)

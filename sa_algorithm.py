@@ -9,8 +9,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+import sa_accept_rules as AR
+
 SCHEDULES = ("geometric", "linear", "log")
 NEIGHBORHOODS = ("swap", "2opt", "oropt", "2opt+oropt")
+RULES = ("metropolis", "threshold", "great_deluge", "lahc")
 MAX_SEGMENT = 3
 CHUNK = 8192
 
@@ -35,7 +38,8 @@ class Run:
     best_length: float
     final_tour: np.ndarray
     final_length: float
-    temps: np.ndarray                     # Temperatur je Stufe (km)
+    temps: np.ndarray                     # roher Plan-Wert je Stufe (km, T0->T_end): Temperatur (Metropolis), Schwelle (Threshold Accepting),
+                                           # Abstand über der Schranke (Great Deluge - die Wasserspiegel selbst sind bound + temps); bei LAHC ungenutzt
     accept_rate: np.ndarray               # Anteil angenommener Vorschläge je Stufe
     worse_rate: np.ndarray                # Anteil angenommener VERSCHLECHTERUNGEN an allen Vorschlägen je Stufe
     level_length: np.ndarray              # Länge der aktuellen Tour am Ende jeder Stufe
@@ -47,6 +51,8 @@ class Run:
     trace_iter: np.ndarray = None         # Vorschläge bis zu den Punkten der Verlaufskurve
     trace_length: np.ndarray = None       # aktuelle Länge dort
     trace_best: np.ndarray = None         # beste Länge dort
+    rule: str = "metropolis"
+    debug: list = field(default_factory=list)   # nur bei debug_trace=True: (delta, kontrollwert, angenommen) je Vorschlag - fürs Testen
 
 
 def _kinds(neighborhood):
@@ -61,20 +67,28 @@ def _kinds(neighborhood):
     raise ValueError(neighborhood)
 
 
-def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.05, budget=100000, levels=100, seed=0, unit=1.0, keep_snapshots=True, trace_points=300):
-    """Ein Lauf. `t0` und `t_end` sind Vielfache von `unit` (km); `budget` = Zahl der gültigen Vorschläge (bewerteten Nachbarn), `levels` = Zahl der Temperaturstufen."""
+def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.05, budget=100000, levels=100, seed=0, unit=1.0, keep_snapshots=True, trace_points=300,
+           rule="metropolis", bound=0.0, lahc_length=1000, debug_trace=False):
+    """Ein Lauf. `t0` und `t_end` sind Vielfache von `unit` (km); `budget` = Zahl der gültigen Vorschläge (bewerteten Nachbarn), `levels` = Zahl der Stufen.
+    `rule` bestimmt die Annahmeentscheidung (sa_accept_rules.py): 'metropolis' (Standard) nutzt t0/t_end/schedule als Temperatur; 'threshold' (Threshold Accepting)
+    dieselben als deterministische Schwelle pro Zug; 'great_deluge' nutzt t0/t_end/schedule als Abstand ÜBER `bound` (der Wasserspiegel ist also `bound + Plan-Wert`,
+    ein Vergleich der ABSOLUTEN Kandidatenlänge, nicht der Änderung); 'lahc' (Late Acceptance Hill Climbing) ignoriert t0/t_end/schedule/bound vollständig und
+    braucht nur `lahc_length` (Ringpuffer-Länge in Vorschlägen)."""
     if neighborhood not in NEIGHBORHOODS:
         raise ValueError(neighborhood)
+    if rule not in RULES:
+        raise ValueError(rule)
     levels = max(1, min(int(levels), int(budget)))
     n = len(D)
     Dl = D.tolist()
     t = [int(x) for x in start]
     kinds = _kinds(neighborhood)
     n_kinds = len(kinds)
-    temps = temperatures(schedule, t0 * unit, t_end * unit, levels)
+    length = sum(Dl[t[k]][t[(k + 1) % n]] for k in range(n))
+    eff_t0 = max(t0 * unit, length - bound) if rule == "great_deluge" else t0 * unit   # Wasserspiegel darf nie unter die Startlänge fallen (sonst nimmt Great Deluge ab Vorschlag 1 fast nichts mehr an)
+    temps = temperatures(schedule, eff_t0, t_end * unit, levels)
     level_len = budget // levels
     rng = np.random.default_rng(seed)
-    length = sum(Dl[t[k]][t[(k + 1) % n]] for k in range(n))
     best_length, best_tour = length, list(t)
     accept_rate, worse_rate = np.zeros(levels), np.zeros(levels)
     level_length, level_best = np.zeros(levels), np.zeros(levels)
@@ -85,9 +99,14 @@ def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.
     seg_choices = [L for L in range(1, MAX_SEGMENT + 1) if n >= L + 3]
     n_seg = len(seg_choices)
     exp = math.exp
+    is_metropolis, is_threshold, is_deluge, is_lahc = (rule == "metropolis", rule == "threshold", rule == "great_deluge", rule == "lahc")
+    debug = []
+    lahc_L = max(1, int(lahc_length))
+    lahc_history = [length] * lahc_L if is_lahc else None                 # Ringpuffer mit Tourlängen, initial = Startlänge (Burke & Bykov)
     for lvl in range(levels):
         T = float(temps[lvl])
         inv_t = 1.0 / T if T > 0 else float("inf")
+        level_value = bound + T if is_deluge else T                      # Wasserspiegel (Great Deluge) bzw. Schwelle/Temperatur (die anderen)
         steps = level_len if lvl < levels - 1 else budget - level_len * (levels - 1)
         acc = accw = done = 0
         while done < steps:
@@ -128,9 +147,20 @@ def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.
                         x, y = t[i], t[j]
                         pi, ni, pj, nj = t[(i - 1) % n], t[(i + 1) % n], t[(j - 1) % n], t[(j + 1) % n]
                         delta = Dl[pi][y] + Dl[y][ni] + Dl[pj][x] + Dl[x][nj] - Dl[pi][x] - Dl[x][ni] - Dl[pj][y] - Dl[y][nj]
+                v = proposals % lahc_L if is_lahc else 0                  # Ringpufferstelle für DIESEN Vorschlag (0-basiert, vor dem Zählerstand)
                 done += 1
                 proposals += 1
-                if delta <= 0.0 or r_u[q] < exp(-delta * inv_t):
+                candidate_length = length + delta
+                if is_metropolis:
+                    accept = AR.metropolis(delta, T, r_u[q])
+                elif is_threshold:
+                    accept = AR.threshold(delta, T)
+                elif is_deluge:
+                    accept = AR.great_deluge(candidate_length, level_value)
+                else:
+                    lahc_old = lahc_history[v]
+                    accept = AR.lahc(candidate_length, lahc_old, length)
+                if accept:
                     if delta > 0.0:
                         accw += 1
                     acc += 1
@@ -148,6 +178,10 @@ def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.
                     if length < best_length - 1e-9:
                         best_length = length
                         best_tour = list(t)
+                if debug_trace:
+                    debug.append((delta, lahc_old if is_lahc else level_value, accept))
+                if is_lahc:
+                    lahc_history[v] = length                              # Länge NACH der Entscheidung (angenommen oder nicht), wie bei Burke & Bykov
                 if proposals % trace_every == 0:
                     tr_it.append(proposals)
                     tr_len.append(length)
@@ -164,4 +198,4 @@ def anneal(D, start, neighborhood="2opt", schedule="geometric", t0=1.0, t_end=0.
     final_length = float(sum(Dl[final[k]][final[(k + 1) % n]] for k in range(n)))
     best = np.array(best_tour, dtype=np.int64)
     return Run(best, float(sum(Dl[best[k]][best[(k + 1) % n]] for k in range(n))), final, final_length, temps, accept_rate, worse_rate, level_length, level_best, snapshots, proposals, accepted, accepted_worse,
-               np.array(tr_it), np.array(tr_len), np.array(tr_best))
+               np.array(tr_it), np.array(tr_len), np.array(tr_best), rule, debug)

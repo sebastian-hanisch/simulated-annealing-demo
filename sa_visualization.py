@@ -62,35 +62,54 @@ def build_tour(xy, tour, ghost=None):
     return _map_layout(fig)
 
 
-def build_acceptance(temps_km, deltas_km, labels):
-    """Metropolis-Regel: Annahmewahrscheinlichkeit exp(-Delta/T) gegen Delta für drei Temperaturen, darunter die Verteilung der Nachbar-Deltas einer guten Tour."""
+def build_acceptance(temps_km, deltas_km, labels, deterministic=False):
+    """Annahmewahrscheinlichkeit gegen Δ für drei Kontrollwerte (Metropolis: exp(-Δ/T); die drei deterministischen Regeln: Stufenfunktion 1 falls Δ <= Kontrollwert, sonst 0 -
+    für Threshold Accepting ist der Kontrollwert die Schwelle selbst, für Great Deluge/LAHC der Abstand zwischen Wasserspiegel/Historienwert und der aktuellen Tour), darunter die Verteilung der Nachbar-Deltas einer guten Tour."""
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.62, 0.38], vertical_spacing=0.06)
     d = np.asarray(deltas_km, dtype=float)
     top = max(float(np.percentile(d, 95)) if len(d) else 0.0, 2.0 * max(temps_km))
-    xs = np.linspace(0.0, top, 200)
+    xs = np.linspace(0.0, top, 400)
     for T_, lab, col in zip(temps_km, labels, ("#d62728", "#ff9896", "#1f77b4")):
-        fig.add_trace(go.Scatter(x=xs, y=np.exp(-xs / T_), mode="lines", line=dict(color=col, width=2.5), name=lab), row=1, col=1)
+        ys = (xs <= T_).astype(float) if deterministic else np.exp(-xs / T_)
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=col, width=2.5, shape="hv" if deterministic else "linear"), name=lab), row=1, col=1)
     fig.add_trace(go.Histogram(x=d[(d >= 0) & (d <= top)], marker_color="#bab0ac", nbinsx=40, name="Nachbarn der Tour"), row=2, col=1)
-    fig.update_yaxes(title_text="Annahmewahrscheinlichkeit", row=1, col=1)
+    fig.update_yaxes(title_text="Annahme" if deterministic else "Annahmewahrscheinlichkeit", row=1, col=1, range=[-0.05, 1.05] if deterministic else None)
     fig.update_yaxes(title_text="Nachbarn", row=2, col=1)
     fig.update_xaxes(title_text="Verlängerung Δ der Tour (km)", row=2, col=1)
     return _base(fig, 430)
 
 
-def build_cooling(temps_unit, accept_rate, worse_rate):
-    """Temperatur (logarithmisch) und Annahmequoten über die Temperaturstufen."""
+def build_cooling(temps_unit, accept_rate, worse_rate, rule="metropolis"):
+    """Temperatur/Schwelle/Wasserspiegel (logarithmisch) und Annahmequoten über die Stufen. Bei LAHC gibt es keine Stufen/keinen Plan - nur die Annahmequote."""
+    label = {"metropolis": "Temperatur", "threshold": "Schwelle", "great_deluge": "Wasserspiegel (über der Schranke)"}.get(rule, "Kontrollwert")
+    if rule == "lahc":
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=list(range(1, len(accept_rate) + 1)), y=accept_rate, mode="lines", line=dict(color=TOUR_COLOR, width=2.5), name="alle angenommenen"))
+        fig.add_trace(go.Scatter(x=list(range(1, len(worse_rate) + 1)), y=worse_rate, mode="lines", line=dict(color=NEW_COLOR, width=2.5, dash="dash"), name="davon Verschlechterungen"))
+        fig.update_yaxes(title_text="Anteil angenommener Vorschläge", tickformat=".0%")
+        fig.update_xaxes(title_text="Abschnitt (kein Plan - Listenlänge L bestimmt die Annahme)")
+        fig.update_layout(legend=dict(orientation="h", y=-0.25))
+        return _base(fig, 340)
     x = list(range(1, len(temps_unit) + 1))
-    fig = make_subplots(rows=1, cols=2, subplot_titles=("Temperatur (Vielfache der mittleren Kantenlänge)", "Anteil angenommener Vorschläge"), horizontal_spacing=0.12)
-    fig.add_trace(go.Scatter(x=x, y=temps_unit, mode="lines", line=dict(color=SA_COLOR, width=2.5), name="Temperatur"), row=1, col=1)
+    fig = make_subplots(rows=1, cols=2, subplot_titles=(f"{label} (Vielfache der mittleren Kantenlänge)", "Anteil angenommener Vorschläge"), horizontal_spacing=0.12)
+    fig.add_trace(go.Scatter(x=x, y=temps_unit, mode="lines", line=dict(color=SA_COLOR, width=2.5), name=label), row=1, col=1)
     fig.add_trace(go.Scatter(x=x, y=accept_rate, mode="lines", line=dict(color=TOUR_COLOR, width=2.5), name="alle angenommenen"), row=1, col=2)
     fig.add_trace(go.Scatter(x=x, y=worse_rate, mode="lines", line=dict(color=NEW_COLOR, width=2.5, dash="dash"), name="davon Verschlechterungen"), row=1, col=2)
     fig.update_yaxes(type="log", row=1, col=1)
-    fig.update_xaxes(title_text="Temperaturstufe")
+    fig.update_xaxes(title_text="Stufe")
     fig.update_yaxes(tickformat=".0%", row=1, col=2)
     fig.update_layout(legend=dict(orientation="h", y=-0.25))
     _base(fig, 340)
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))                # Platz für die Titel der Teilbilder
     return fig
+
+
+def build_rule_comparison(rows):
+    """Abstand zur Schranke der vier Annahmeregeln bei gleichem Budget (Balken)."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=[r["label"] for r in rows], y=[r["gap"] for r in rows], marker_color=[SA_COLOR, "#ff9896", "#72b7b2", "#54a24b"], error_y=dict(type="data", array=[r["gap_sd"] for r in rows])))
+    fig.update_yaxes(title_text="Abstand zur Schranke (%)")
+    return _base(fig, 340)
 
 
 def build_trace(trace_iter, trace_length, trace_best, bound, hc_length, hcr_length):

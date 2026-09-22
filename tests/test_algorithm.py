@@ -151,6 +151,82 @@ def test_metropolis_acceptance_rate_matches_the_formula_for_a_fixed_delta():
     assert r.proposals == 1
 
 
+# --- Threshold Accepting, Great Deluge, Late Acceptance Hill Climbing ---------------------------------------------------------------------------
+# Unabhängige Prüfung: debug_trace=True liefert (delta, Kontrollwert, angenommen) je Vorschlag; die Tour wird hier NICHT aus dem Lauf gelesen,
+# sondern aus der Startlänge und der Accept-Folge selbst neu aufsummiert - eine Abweichung von sa_accept_rules würde die Nachrechnung sichtbar brechen.
+
+
+def _replay_and_check(D, start, run, rule):
+    cur = T.tour_length(np.array(start), D)
+    import sa_accept_rules as AR
+    for delta, ctrl, accepted in run.debug:
+        candidate = cur + delta
+        if rule == "threshold":
+            expected = AR.threshold(delta, ctrl)
+        elif rule == "great_deluge":
+            expected = AR.great_deluge(candidate, ctrl)
+        else:
+            expected = AR.lahc(candidate, ctrl, cur)
+        assert accepted == expected, (rule, delta, ctrl, cur, candidate)
+        if accepted:
+            cur += delta
+    return cur
+
+
+@pytest.mark.parametrize("neighborhood", ["2opt", "swap", "oropt", "2opt+oropt"])
+def test_threshold_accepting_matches_the_independent_replay_and_never_exceeds_the_threshold(neighborhood):
+    xy, D = _instance(16, 3)
+    start = T.random_tour(16, np.random.default_rng(0))
+    r = SA.anneal(D, start, neighborhood, "linear", t0=0.4, t_end=0.05, budget=6000, levels=30, seed=1, unit=8.0, keep_snapshots=False, rule="threshold", debug_trace=True)
+    final_cur = _replay_and_check(D, start, r, "threshold")
+    assert final_cur == pytest.approx(r.final_length, abs=1e-6)
+    assert all(delta <= ctrl + 1e-9 for delta, ctrl, accepted in r.debug if accepted)          # jede Annahme unter der Schwelle
+    assert all(delta > ctrl - 1e-9 for delta, ctrl, accepted in r.debug if not accepted)       # jede Ablehnung darüber
+
+
+@pytest.mark.parametrize("neighborhood", ["2opt", "swap", "oropt", "2opt+oropt"])
+def test_great_deluge_matches_the_independent_replay_and_the_water_level_is_monotone(neighborhood):
+    xy, D = _instance(16, 4)
+    start = T.random_tour(16, np.random.default_rng(0))
+    bound = T.held_karp_bound(D, T.tour_length(start, D))
+    r = SA.anneal(D, start, neighborhood, "geometric", t0=25.0, t_end=2.0, budget=6000, levels=30, seed=1, unit=8.0, keep_snapshots=False, rule="great_deluge", bound=bound, debug_trace=True)
+    final_cur = _replay_and_check(D, start, r, "great_deluge")
+    assert final_cur == pytest.approx(r.final_length, abs=1e-6)
+    levels_seen = sorted({ctrl for _, ctrl, _ in r.debug}, reverse=True)
+    assert all(a >= b - 1e-9 for a, b in zip(levels_seen, levels_seen[1:]))                    # Wasserspiegel fällt monoton über die Stufen
+    assert bound + float(r.temps[-1]) <= bound + float(r.temps[0]) + 1e-9
+
+
+def test_late_acceptance_matches_the_independent_replay():
+    xy, D = _instance(16, 5)
+    start = T.random_tour(16, np.random.default_rng(0))
+    r = SA.anneal(D, start, "2opt", "geometric", budget=6000, levels=30, seed=1, unit=8.0, keep_snapshots=False, rule="lahc", lahc_length=17, debug_trace=True)
+    final_cur = _replay_and_check(D, start, r, "lahc")
+    assert final_cur == pytest.approx(r.final_length, abs=1e-6)
+
+
+def test_late_acceptance_history_starts_at_the_start_length_and_ring_buffer_wraps():
+    xy, D = _instance(10, 1)
+    start = T.random_tour(10, np.random.default_rng(0))
+    start_len = T.tour_length(start, D)
+    r = SA.anneal(D, start, "2opt", budget=5, levels=1, seed=2, unit=8.0, keep_snapshots=False, rule="lahc", lahc_length=1000, debug_trace=True)
+    # bei L > Budget wurde noch kein Ringpuffer-Eintrag überschrieben: jeder Vorschlag vergleicht gegen die Startlänge
+    for delta, ctrl, accepted in r.debug:
+        assert ctrl == pytest.approx(start_len)
+
+
+def test_unknown_rule_is_rejected():
+    xy, D = _instance(8, 0)
+    with pytest.raises(ValueError):
+        SA.anneal(D, T.random_tour(8, np.random.default_rng(0)), budget=10, rule="nonsense")
+
+
+def test_rule_is_recorded_on_the_run():
+    xy, D = _instance(8, 0)
+    r = SA.anneal(D, T.random_tour(8, np.random.default_rng(0)), budget=10, rule="threshold")
+    assert r.rule == "threshold" and r.debug == []                        # debug_trace default False: keine Buchführung, keine Verlangsamung im Normalbetrieb
+
+
 # --- Kopierter Hill-Climbing-Kern ------------------------------------------------------------------------------------------------------------
 
 

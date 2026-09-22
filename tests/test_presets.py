@@ -9,11 +9,12 @@ import sa_presets as P
 
 def _settings(p, seed=None, chain_seed=None):
     return ev.Settings(n=p["n"], cluster_share=p["ballung"], seed=p["seed"] if seed is None else seed, neighborhood=p["neighborhood"], schedule=p["schedule"], t0=p["t0"], t_end=p["t_end"],
-                       budget=p["budget"], levels=p["levels"], start=p["start"], chain_seed=p["chain_seed"] if chain_seed is None else chain_seed)
+                       budget=p["budget"], levels=p["levels"], start=p["start"], chain_seed=p["chain_seed"] if chain_seed is None else chain_seed,
+                       rule=p["rule"], lahc_length=p["lahc_length"], gd_t0=p["gd_t0"], gd_t_end=p["gd_t_end"])
 
 
 def test_every_preset_has_help_bands_and_all_keys():
-    assert set(C.PRESETS) == set(C.PRESET_HELP) == set(C.PRESET_EXPECTED_BANDS) and len(C.PRESETS) == 8
+    assert set(C.PRESETS) == set(C.PRESET_HELP) == set(C.PRESET_EXPECTED_BANDS) and len(C.PRESETS) == 12
     for name, p in C.PRESETS.items():
         assert set(p) == set(P.PRESET_KEYS) and C.PRESET_HELP[name]
 

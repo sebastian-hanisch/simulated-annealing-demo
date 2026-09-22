@@ -16,7 +16,7 @@ import streamlit as st
 
 import sa_constants as C
 import sa_tour as T
-from sa_evaluation import SWEEP_LABELS, Settings, analyse, chain_spread, dlb_budget_sweep, heatmap_table, scaling_table, sweep, verdict
+from sa_evaluation import SWEEP_LABELS, Settings, analyse, chain_spread, dlb_budget_sweep, heatmap_table, rule_comparison_table, scaling_table, sweep, verdict
 from sa_presets import (
     apply_preset,
     bounds,
@@ -26,7 +26,7 @@ from sa_presets import (
     randomize_seed,
     sync_query_params,
 )
-from sa_visualization import build_acceptance, build_budget, build_cooling, build_heatmap, build_instance, build_scaling, build_spread, build_sweep, build_tour, build_trace
+from sa_visualization import build_acceptance, build_budget, build_cooling, build_heatmap, build_instance, build_rule_comparison, build_scaling, build_spread, build_sweep, build_tour, build_trace
 
 st.set_page_config(page_title="Simulated Annealing – Sebastian Hanisch", layout="wide")
 
@@ -61,6 +61,11 @@ def _scaling(base):
     return scaling_table(base)
 
 
+@st.cache_data(show_spinner=False)
+def _rule_comparison(base, budget):
+    return rule_comparison_table(base, budget=budget)
+
+
 def _fmt_int(x):
     return f"{int(round(x)):,}".replace(",", ".")
 
@@ -84,9 +89,11 @@ with st.expander("So funktioniert Simulated Annealing", expanded=True):
         """
 1. **Ein Vorschlag = ein bewerteter Nachbar.** In jeder Iteration wird **ein** zufälliger Nachbar der Tour gezogen (2-opt: ein Stück umdrehen, Or-opt: ein Stück versetzen, Tausch, oder eine Mischung) und seine Längenänderung $\\Delta$ aus wenigen Kanten berechnet.
    Das Hill Climbing bewertet dagegen *alle* Nachbarn und nimmt einen; beide zählen ihre Bewertungen, das **Budget** ist also vergleichbar.
-2. **Metropolis-Regel.** Ist $\\Delta \\le 0$, wird der Zug angenommen. Sonst mit der Wahrscheinlichkeit $e^{-\\Delta/T}$: bei $T$ gleich $\\Delta$ etwa mit 37 %, bei $\\Delta = 3T$ mit 5 %. Ein kleines $T$ macht daraus das Hill Climbing, ein großes einen Zufallsspaziergang.
-3. **Abkühlplan.** Die Temperatur fällt in Stufen (je Stufe bleibt sie gleich): **geometrisch** (jede Stufe um denselben Faktor kleiner), **linear**, oder **logarithmisch** ($T_0 \\ln 2 / \\ln(k+2)$, nach Hajek in unendlich langer Zeit optimal).
-   Angegeben wird $T$ in Vielfachen der **mittleren Kantenlänge einer guten Tour** (untere Schranke geteilt durch die Zahl der Knoten, bei 60 Stopps etwa 10 km) – so passt derselbe Regler zu jeder Instanz.
+2. **Annahmeregel.** Vier zur Wahl. **Metropolis** (Voreinstellung): ist $\\Delta \\le 0$, wird der Zug angenommen, sonst mit der Wahrscheinlichkeit $e^{-\\Delta/T}$ – bei $T$ gleich $\\Delta$ etwa 37 %, bei $\\Delta = 3T$ etwa 5 %. Die anderen drei entscheiden **deterministisch**, ohne Zufallszahl:
+   **Threshold Accepting** nimmt an, wenn $\\Delta$ höchstens eine Schwelle ist (dieselbe Skala wie Metropolis' Temperatur); **Great Deluge** vergleicht die **absolute** neue Tourlänge mit einem sinkenden Wasserspiegel (nicht die Änderung); **Late Acceptance Hill Climbing** vergleicht mit der Tourlänge von vor $L$ Vorschlägen ODER der aktuellen Tour – kein Plan, nur ein Regler ($L$).
+   Bei 200 Tausend Vorschlägen: Metropolis 1.4 %, Late Acceptance 2.2 %, Threshold Accepting 2.7 %, Great Deluge 3.2 % über der Schranke – der Zufall bringt gegenüber den drei deterministischen Regeln noch einen kleinen Vorsprung.
+3. **Abkühlplan.** Temperatur/Schwelle/Wasserspiegel fallen in Stufen (je Stufe bleibt der Wert gleich): **geometrisch** (jede Stufe um denselben Faktor kleiner), **linear**, oder **logarithmisch** ($T_0 \\ln 2 / \\ln(k+2)$, nach Hajek in unendlich langer Zeit optimal). Late Acceptance braucht keinen Plan.
+   Angegeben wird der Wert in Vielfachen der **mittleren Kantenlänge einer guten Tour** (untere Schranke geteilt durch die Zahl der Knoten, bei 60 Stopps etwa 10 km) – so passt derselbe Regler zu jeder Instanz (außer bei Great Deluge, dessen Anfangsabstand die GESAMTE Tourlänge über der Schranke decken muss, nicht nur einen Zug – siehe Seitenleiste).
 4. **Gemerkt wird die beste Tour.** Die Kette wandert, auch bergauf; die kürzeste je besuchte Tour wird aufgehoben. Am Ende zählt sie, nicht die letzte.
 5. **Bewertung.** Der Abstand zur **1-Baum-Schranke** (Held-Karp), wie in der Hill-Climbing-Demo: bei gleichverteilten 60 Stopps liegt sie im Mittel 0.5 % unter dem echten Optimum. Verglichen wird mit **einem Abstieg** und mit **Hill Climbing mit Neustarts** bei gleichem Bewertungsbudget.
         """
@@ -125,36 +132,82 @@ with st.sidebar:
         help="Welche Änderung ein Vorschlag ist. Tausch 22.6 %, 2-opt 1.4 %, Or-opt 5.7 %, 2-opt + Or-opt 1.2 % über der Schranke (60 Stopps, Standardplan); ein Hill-Climbing-Abstieg mit derselben Nachbarschaft: 54.5 / 7.9 / 10.4 / 3.7 %. "
              "Die Temperatur ersetzt die Nachbarschaft nicht (Tausch allein bleibt schlecht), aber 2-opt allein kommt weit: 2-opt + Or-opt ändert kaum etwas (1.2 statt 1.4 %), beim Hill Climbing halbiert es die Lücke.",
     )
-    schedule = st.selectbox(
-        "Abkühlplan", list(C.SCHEDULE_LABELS), key="schedule_select", format_func=lambda k: C.SCHEDULE_LABELS[k],
-        help="Wie die Temperatur von T0 auf T_end fällt. Bei 200 Tausend Vorschlägen (60 Stopps, 2-opt) liegt die beste Tour geometrisch 1.4 %, linear 1.3 % und logarithmisch 3.4 % über der Schranke: geometrisch und linear sind gleichwertig, "
-             "der logarithmische Plan (in der Theorie optimal, erreicht T_end nicht) kühlt zu langsam ab.",
+    rule = st.selectbox(
+        "Annahmeregel", list(C.RULE_LABELS), key="rule_select", format_func=lambda k: C.RULE_LABELS[k],
+        help="Wie ein Vorschlag angenommen wird, der die Tour verlängert. **Metropolis** (Zufall, Wahrscheinlichkeit $e^{-\\Delta/T}$) ist die Voreinstellung; **Threshold Accepting**, **Great Deluge** und **Late Acceptance Hill Climbing** entscheiden deterministisch, ohne Zufallszahl. "
+             "Bei 200 Tausend Vorschlägen (60 Stopps, 2-opt, Standardplan): Metropolis 1.4 %, Late Acceptance 2.2 %, Threshold Accepting 2.7 %, Great Deluge 3.2 % über der Schranke – Hill Climbing mit Neustarts bei gleichem Budget 4.9 %. "
+             "Alle vier schlagen den Neustart-Abstieg klar; der Zufall bringt gegenüber den drei deterministischen Regeln noch einen kleinen Vorsprung.",
     )
-    t0 = st.slider(
-        "Anfangstemperatur T0", *bounds("t0_slider"), key="t0_slider", step=C.T0_STEP, format="%.2f",
-        help="In Vielfachen der mittleren Kantenlänge einer guten Tour. Bei T0 = 0.1 / 0.25 / 0.5 / 1 / 2 / 4 (T_end 0.1, 200 Tausend Vorschläge, 60 Stopps) liegt die beste Tour 3.8 / 2.1 / 1.4 / 1.2 / 1.7 / 1.8 % über der Schranke; "
-             "der Anteil angenommener Vorschläge ist 0.3 / 0.6 / 1.2 / 3.0 / 7.6 / 15.2 %. Der Anfang ist unkritisch (0.25 bis 4 geht), zu kalt (0.1) verschenkt viel.",
-    )
-    if schedule != "log":
-        t_end = st.slider(
-            "Endtemperatur", *bounds("tend_slider"), key="tend_slider", step=C.T_END_STEP, format="%.3f",
-            help="In Vielfachen der mittleren Kantenlänge einer guten Tour (T0 = 0.5). Bei 0.005 / 0.02 / 0.05 / 0.1 / 0.2 / 0.5 liegt die beste Tour 3.1 / 2.3 / 1.75 / 1.4 / 1.4 / 9.5 % über der Schranke, die letzte 3.1 / 2.4 / 2.0 / 1.8 / 3.7 / 27.2 %: "
-                 "das Ende ist kritisch – zu heiß (0.5) kommt die Kette nicht zur Ruhe, zu kalt (0.005) verschwendet Vorschläge.",
+    if rule in ("metropolis", "threshold"):
+        schedule = st.selectbox(
+            "Abkühlplan", list(C.SCHEDULE_LABELS), key="schedule_select", format_func=lambda k: C.SCHEDULE_LABELS[k],
+            help="Wie die Temperatur (Metropolis) bzw. die Schwelle (Threshold Accepting) von T0 auf T_end fällt. Bei 200 Tausend Vorschlägen (60 Stopps, 2-opt, Metropolis) liegt die beste Tour geometrisch 1.4 %, linear 1.3 % und logarithmisch 3.4 % über der Schranke: geometrisch und linear sind gleichwertig, "
+                 "der logarithmische Plan (in der Theorie optimal, erreicht T_end nicht) kühlt zu langsam ab.",
         )
-        st.session_state["_kept_tend_slider"] = t_end
+        st.session_state["_kept_schedule_select"] = schedule
     else:
+        schedule = st.session_state.get("_kept_schedule_select", C.DEFAULT_SCHEDULE)
+        st.caption(("Great Deluge nutzt den Abkühlplan für die Form des Wasserspiegels (siehe Anfangs-/Endabstand unten)." if rule == "great_deluge"
+                    else "Late Acceptance Hill Climbing braucht keinen Plan – nur die Listenlänge L unten."))
+    t0_label = "Anfangstemperatur T0" if rule == "metropolis" else "Anfangsschwelle" if rule == "threshold" else "T0"
+    if rule in ("metropolis", "threshold"):
+        t0 = st.slider(
+            t0_label, *bounds("t0_slider"), key="t0_slider", step=C.T0_STEP, format="%.2f",
+            help=("In Vielfachen der mittleren Kantenlänge einer guten Tour. Bei T0 = 0.1 / 0.25 / 0.5 / 1 / 2 / 4 (T_end 0.1, 200 Tausend Vorschläge, 60 Stopps, Metropolis) liegt die beste Tour 3.8 / 2.1 / 1.4 / 1.2 / 1.7 / 1.8 % über der Schranke; "
+                  "der Anteil angenommener Vorschläge ist 0.3 / 0.6 / 1.2 / 3.0 / 7.6 / 15.2 %. Der Anfang ist unkritisch (0.25 bis 4 geht), zu kalt (0.1) verschenkt viel." if rule == "metropolis" else
+                  "Dieselbe Skala wie Metropolis' Temperatur, hier als feste Schwelle für die Längenänderung eines Zuges: ein Vorschlag wird angenommen, wenn Δ höchstens die Schwelle ist – ohne Zufall."),
+        )
+        st.session_state["_kept_t0_slider"] = t0
+        if schedule != "log":
+            t_end = st.slider(
+                "Endtemperatur" if rule == "metropolis" else "Endschwelle", *bounds("tend_slider"), key="tend_slider", step=C.T_END_STEP, format="%.3f",
+                help=("In Vielfachen der mittleren Kantenlänge einer guten Tour (T0 = 0.5). Bei 0.005 / 0.02 / 0.05 / 0.1 / 0.2 / 0.5 (Metropolis) liegt die beste Tour 3.1 / 2.3 / 1.75 / 1.4 / 1.4 / 9.5 % über der Schranke, die letzte 3.1 / 2.4 / 2.0 / 1.8 / 3.7 / 27.2 %: "
+                      "das Ende ist kritisch – zu heiß (0.5) kommt die Kette nicht zur Ruhe, zu kalt (0.005) verschwendet Vorschläge." if rule == "metropolis" else
+                      "Schwelle der letzten Stufe (Threshold Accepting): zu hoch, und die Suche kommt nicht zur Ruhe, zu niedrig verschwendet Vorschläge – wie bei Metropolis' Endtemperatur."),
+            )
+            st.session_state["_kept_tend_slider"] = t_end
+        else:
+            t_end = float(st.session_state.get("_kept_tend_slider", C.DEFAULT_T_END))
+            st.caption("Der logarithmische Plan hat keine Endtemperatur/-schwelle: er endet bei $T_0 \\ln 2 / \\ln(K + 1)$.")
+    else:
+        t0 = float(st.session_state.get("_kept_t0_slider", C.DEFAULT_T0))
         t_end = float(st.session_state.get("_kept_tend_slider", C.DEFAULT_T_END))
-        st.caption("Der logarithmische Plan hat keine Endtemperatur: er endet bei $T_0 \\ln 2 / \\ln(K + 1)$.")
+    if rule == "great_deluge":
+        gd_t0 = st.slider(
+            "Anfangsabstand", C.GD_T0_MIN, C.GD_T0_MAX, float(st.session_state.get("gd_t0_slider", C.DEFAULT_GD_T0)), key="gd_t0_slider", step=C.GD_T0_STEP,
+            help="Wasserspiegel zu Beginn: Vielfache der mittleren Kantenlänge ÜBER der Schranke (absolute Tourlänge, nicht eine Änderung pro Zug). Bei einer zufälligen Startlösung liegt die Tour selbst schon 250 bis 280 Einheiten über der Schranke; "
+                 "ist der Anfangsabstand knapp darunter (280), kippt die Suche gelegentlich katastrophal (die Demo hebt den Spiegel dann automatisch auf die Startlänge an, damit das nicht passiert – aber die Kalibrierung gilt für 60 Stopps, nicht für viel größere Instanzen).",
+        )
+        gd_t_end = st.slider(
+            "Endabstand", C.GD_T_END_MIN, C.GD_T_END_MAX, float(st.session_state.get("gd_tend_slider", C.DEFAULT_GD_T_END)), key="gd_tend_slider", step=C.GD_T_END_STEP,
+            help="Wasserspiegel am Ende, Einheiten über der Schranke. Bei t0=300: Endabstand 2 ergibt 3.4 %, deutlich kleiner (unter 295) kippt die Suche katastrophal (Streuung größer als der Mittelwert), größer (6) verschwendet Vorschläge (7.3 %).",
+        )
+    else:
+        gd_t0 = float(st.session_state.get("gd_t0_slider", C.DEFAULT_GD_T0))
+        gd_t_end = float(st.session_state.get("gd_tend_slider", C.DEFAULT_GD_T_END))
     budget = st.select_slider(
         "Budget (Vorschläge)", options=list(C.BUDGETS), key="budget_select", format_func=_fmt_int,
-        help="Wie viele Nachbarn insgesamt bewertet werden (bei 60 Stopps braucht ein Hill-Climbing-Abstieg etwa 74 Tausend). Bei 10 / 25 / 50 / 100 / 200 Tausend / 0.5 / 1 / 2 Millionen liegt die beste Tour 8.0 / 4.1 / 2.6 / 2.6 / 1.4 / 1.0 / 0.7 / 0.5 % über der Schranke, "
+        help="Wie viele Nachbarn insgesamt bewertet werden (bei 60 Stopps braucht ein Hill-Climbing-Abstieg etwa 74 Tausend). Bei 10 / 25 / 50 / 100 / 200 Tausend / 0.5 / 1 / 2 Millionen liegt die beste Tour (Metropolis) 8.0 / 4.1 / 2.6 / 2.6 / 1.4 / 1.0 / 0.7 / 0.5 % über der Schranke, "
              "die letzte 8.0 / 4.5 / 3.3 / 3.1 / 1.8 / 1.8 / 1.25 / 1.2 %; Hill Climbing mit Neustarts: 7.9 / 7.9 / 7.9 / 7.9 / 4.9 / 2.9 / 2.5 / 1.9 %. Bei 10 Tausend ist Simulated Annealing nicht besser als ein Abstieg.",
     )
-    levels = st.select_slider(
-        "Temperaturstufen", options=list(C.LEVEL_OPTIONS), key="levels_select",
-        help="In wie viele Stufen gleicher Temperatur das Budget zerlegt wird. Bei 1 / 3 / 10 / 30 / 100 / 300 / 1000 Stufen liegt die beste Tour 8.9 / 2.2 / 1.1 / 1.7 / 1.4 / 1.3 / 1.6 % über der Schranke: eine Stufe (konstante Temperatur, letzte Tour 28.4 %) ist Unsinn, "
-             "ab etwa drei Stufen ändert sich nichts Sicheres mehr.",
-    )
+    if rule == "lahc":
+        lahc_length = st.slider(
+            "Listenlänge L", C.LAHC_MIN, C.LAHC_MAX, int(st.session_state.get("lahc_length_slider", C.DEFAULT_LAHC_L)), key="lahc_length_slider", step=C.LAHC_STEP,
+            help="Länge des Ringpuffers vergangener Tourlängen (in Vorschlägen), gegen den ein Kandidat zusätzlich zur aktuellen Tour antritt. Bei 200 Tausend Vorschlägen (60 Stopps): L=100 4.0 %, L=300 3.9 %, L=500 2.2 % (Voreinstellung) – "
+                 "darüber kippt es: L=700 15.4 %, L=1000 44.2 %, L=3000 147 %. Der Ringpuffer 'kommt nicht mehr nach': bei zu großem L vergleicht ein Vorschlag noch lange mit einem sehr alten, schlechten Wert und wird fast immer angenommen – die Suche konvergiert nicht mehr.",
+        )
+    else:
+        lahc_length = int(st.session_state.get("lahc_length_slider", C.DEFAULT_LAHC_L))
+    if rule in ("metropolis", "threshold", "great_deluge"):
+        levels = st.select_slider(
+            "Temperaturstufen", options=list(C.LEVEL_OPTIONS), key="levels_select",
+            help="In wie viele Stufen gleicher Temperatur/Schwelle/Wasserspiegel das Budget zerlegt wird. Bei 1 / 3 / 10 / 30 / 100 / 300 / 1000 Stufen (Metropolis) liegt die beste Tour 8.9 / 2.2 / 1.1 / 1.7 / 1.4 / 1.3 / 1.6 % über der Schranke: eine Stufe (letzte Tour 28.4 %) ist Unsinn, "
+                 "ab etwa drei Stufen ändert sich nichts Sicheres mehr.",
+        )
+        st.session_state["_kept_levels_select"] = levels
+    else:
+        levels = int(st.session_state.get("_kept_levels_select", C.DEFAULT_LEVELS))
+        st.caption("Late Acceptance Hill Climbing kennt keine Temperaturstufen – nur den einen Regler L.")
     start = st.radio(
         "Startlösung", list(C.START_LABELS), key="start_radio", format_func=lambda k: C.START_LABELS[k], horizontal=True,
         help="Zufällige Reihenfolge oder Nächster Nachbar. Die erste Temperatur ist heiß genug, um die Startlösung zu vergessen: zufällig 1.4 %, Nächster Nachbar 2.0 % über der Schranke (60 Stopps, Standardplan) – kein Gewinn. "
@@ -170,14 +223,19 @@ with st.sidebar:
     st.button("🎲 Neue Kette würfeln", width="stretch", on_click=randomize_chain_seed, help="Würfelt einen neuen Seed für dieselbe Instanz.")
 
 sync_query_params({
-    "n_slider": int(n_stops), "ballung_slider": int(cluster_share), "seed_input": int(seed), "neighborhood_select": neighborhood, "schedule_select": schedule, "t0_slider": round(float(t0), 4),
+    "n_slider": int(n_stops), "ballung_slider": int(cluster_share), "seed_input": int(seed), "neighborhood_select": neighborhood, "rule_select": rule, "schedule_select": schedule, "t0_slider": round(float(t0), 4),
     "tend_slider": round(float(t_end), 4), "budget_select": int(budget), "levels_select": int(levels), "start_radio": start, "chain_seed_input": int(chain_seed),
+    "lahc_length_slider": int(lahc_length), "gd_t0_slider": round(float(gd_t0), 4), "gd_tend_slider": round(float(gd_t_end), 4),
 })
 
 t_end_used = min(float(t_end), float(t0))
-if schedule != "log" and float(t_end) > float(t0):
+if rule in ("metropolis", "threshold") and schedule != "log" and float(t_end) > float(t0):
     st.sidebar.warning("Die Endtemperatur liegt über der Anfangstemperatur – sie wird auf T0 begrenzt (konstante Temperatur).")
-settings = Settings(int(n_stops), int(cluster_share), int(seed), neighborhood, schedule, round(float(t0), 4), round(t_end_used, 4), int(budget), int(levels), start, int(chain_seed))
+gd_t_end_used = min(float(gd_t_end), float(gd_t0))
+if rule == "great_deluge" and float(gd_t_end) > float(gd_t0):
+    st.sidebar.warning("Der Endabstand liegt über dem Anfangsabstand – er wird auf den Anfangsabstand begrenzt (konstanter Spiegel).")
+settings = Settings(int(n_stops), int(cluster_share), int(seed), neighborhood, schedule, round(float(t0), 4), round(t_end_used, 4), int(budget), int(levels), start, int(chain_seed),
+                     rule, int(lahc_length), round(float(gd_t0), 4), round(gd_t_end_used, 4))
 with st.spinner("Rechne..."):
     a = _analysis(settings)
 run = a.run
@@ -226,24 +284,45 @@ def _render(current_step, lv):
         elif current_step == 2:
             c1, c2 = st.columns([3, 2])
             deltas = T.neighbor_deltas(run.best_tour, a.D, settings.neighborhood)
-            t_mid = float(np.sqrt(run.temps[0] * run.temps[-1]))
-            c1.markdown("**Annahmewahrscheinlichkeit einer Verlängerung um Δ km** – und wie lang die Verlängerungen bei einer guten Tour tatsächlich sind")
-            c1.plotly_chart(build_acceptance([float(run.temps[0]), t_mid, float(run.temps[-1])], deltas[deltas > 0], [f"Anfang: T = {run.temps[0]:.1f} km", f"Mitte: T = {t_mid:.1f} km", f"Ende: T = {run.temps[-1]:.1f} km"]),
-                            width="stretch", key="s2_acc")
-            c2.markdown("**Was die Temperatur bedeutet**")
-            c2.metric("Temperatureinheit", f"{a.unit:.1f} km", help="Mittlere Kantenlänge einer guten Tour: untere Schranke geteilt durch die Zahl der Knoten. T0 und T_end sind Vielfache davon.")
-            c2.metric("Anfang → Ende", f"{run.temps[0]:.1f} → {run.temps[-1]:.2f} km", help="Temperatur der ersten und der letzten Stufe in km.")
+            if settings.rule == "lahc":
+                c1.markdown("**Verlängerungen der Nachbarn der besten Tour** – Late Acceptance hat keine Temperatur/Schwelle: ein Vorschlag wird angenommen, wenn er kürzer ist als die Tour vor L Vorschlägen ODER kürzer als die aktuelle Tour.")
+                c1.plotly_chart(build_cooling(temps_unit, run.accept_rate, run.worse_rate, rule="lahc"), width="stretch", key="s2_lahc")
+                c2.markdown("**Was L bedeutet**")
+                c2.metric("Listenlänge L", f"{settings.lahc_length:,}".replace(",", "."), help="Länge des Ringpuffers vergangener Tourlängen (in Vorschlägen).")
+            else:
+                is_det = settings.rule in ("threshold", "great_deluge")
+                if settings.rule == "great_deluge":
+                    lvl0 = a.bound + run.temps[0] - run.level_length[0]
+                    lvl_mid = a.bound + run.temps[len(run.temps) // 2] - run.level_length[len(run.temps) // 2]
+                    lvl_end = a.bound + run.temps[-1] - run.level_length[-1]
+                    ctrl = [max(0.0, lvl0), max(0.0, lvl_mid), max(0.0, lvl_end)]
+                    ctrl_labels = [f"Anfang: Spiegel − Tour ≈ {ctrl[0]:.1f} km", f"Mitte: ≈ {ctrl[1]:.1f} km", f"Ende: ≈ {ctrl[2]:.1f} km"]
+                    title = "**Annahme einer Verlängerung um Δ km** (Wasserspiegel abzüglich der aktuellen Tour an drei Stufen) – und wie lang die Verlängerungen bei einer guten Tour tatsächlich sind"
+                else:
+                    t_mid = float(np.sqrt(run.temps[0] * run.temps[-1])) if settings.rule == "metropolis" else float((run.temps[0] + run.temps[-1]) / 2)
+                    ctrl = [float(run.temps[0]), t_mid, float(run.temps[-1])]
+                    unit_word = "T" if settings.rule == "metropolis" else "Schwelle"
+                    ctrl_labels = [f"Anfang: {unit_word} = {ctrl[0]:.1f} km", f"Mitte: {unit_word} = {ctrl[1]:.1f} km", f"Ende: {unit_word} = {ctrl[2]:.2f} km"]
+                    title = "**Annahmewahrscheinlichkeit einer Verlängerung um Δ km**" if settings.rule == "metropolis" else "**Annahme einer Verlängerung um Δ km** (Threshold Accepting: deterministisch)"
+                    title += " – und wie lang die Verlängerungen bei einer guten Tour tatsächlich sind"
+                c1.markdown(title)
+                c1.plotly_chart(build_acceptance(ctrl, deltas[deltas > 0], ctrl_labels, deterministic=is_det), width="stretch", key="s2_acc")
+                c2.markdown(f"**Was {'die Temperatur' if settings.rule == 'metropolis' else 'die Schwelle' if settings.rule == 'threshold' else 'der Wasserspiegel'} bedeutet**")
+                c2.metric("Temperatureinheit", f"{a.unit:.1f} km", help="Mittlere Kantenlänge einer guten Tour: untere Schranke geteilt durch die Zahl der Knoten.")
+                c2.metric("Anfang → Ende", f"{ctrl[0]:.1f} → {ctrl[-1]:.2f} km", help="Kontrollwert der ersten und der letzten Stufe in km.")
             improving = int((deltas < -1e-9).sum())
             c2.metric("Nachbarn der besten Tour", f"{len(deltas):,}".replace(",", "."), delta=f"{improving} verkürzen", delta_color="off", help="Zahl der Nachbarn der besten gefundenen Tour und wie viele davon sie noch verkürzen.")
         elif current_step == 3:
-            st.markdown("**Temperatur und Annahmequote je Stufe**")
-            st.plotly_chart(build_cooling(temps_unit, run.accept_rate, run.worse_rate), width="stretch", key="s3_cooling")
+            st.markdown("**Kontrollwert und Annahmequote je Stufe**" if settings.rule != "lahc" else "**Annahmequote über den Lauf**")
+            st.plotly_chart(build_cooling(temps_unit, run.accept_rate, run.worse_rate, rule=settings.rule), width="stretch", key="s3_cooling")
             st.markdown("**Länge der aktuellen und der besten Tour über die Vorschläge**")
             st.plotly_chart(build_trace(run.trace_iter, run.trace_length, run.trace_best, a.bound, a.hc.length, T.tour_length(a.hcr_tour, a.D)), width="stretch", key="s3_trace")
         elif current_step == 4:
             c1, c2 = st.columns([3, 2])
             snap = run.snapshots[lv - 1]
-            c1.markdown(f"**Stufe {lv} von {n_levels}: T = {run.temps[lv - 1]:.2f} km** – aktuelle Tour {T.tour_length(snap, a.D):,.0f} km".replace(",", "."))
+            stage_word = "Abschnitt" if settings.rule == "lahc" else "Stufe"
+            ctrl_word = "" if settings.rule == "lahc" else f": {'T' if settings.rule == 'metropolis' else 'Schwelle' if settings.rule == 'threshold' else 'Spiegel-Abstand'} = {run.temps[lv - 1]:.2f} km"
+            c1.markdown(f"**{stage_word} {lv} von {n_levels}{ctrl_word}** – aktuelle Tour {T.tour_length(snap, a.D):,.0f} km".replace(",", "."))
             c1.plotly_chart(build_tour(xy, snap, ghost=run.best_tour if lv < n_levels else None), width="stretch", key=f"s4_map_{lv}")
             c2.markdown("**An dieser Stufe**")
             c2.metric("Temperatur", f"{temps_unit[lv - 1]:.2f} Einheiten", help="Vielfache der mittleren Kantenlänge einer guten Tour.")
@@ -279,10 +358,20 @@ else:
 if step == 1:
     st.caption(f"{a.inst.n} Stopps; die untere Schranke der kürzesten Rundtour liegt bei {a.bound:,.0f} km (1-Baum-Schranke, Held-Karp). Die Temperatureinheit ist {a.unit:.1f} km.".replace(",", "."))
 elif step == 2:
-    st.caption(f"Oben: bei der Anfangstemperatur ({run.temps[0]:.1f} km) wird eine Verlängerung um 5 km mit {np.exp(-5 / run.temps[0]):.0%}, bei der Endtemperatur ({run.temps[-1]:.2f} km) mit {np.exp(-5 / run.temps[-1]):.1%} angenommen. "
-               "Unten: die Verlängerungen aller Nachbarn der besten gefundenen Tour – bei kleinem T sind nur die kleinsten davon noch erreichbar.")
+    if settings.rule == "metropolis":
+        st.caption(f"Oben: bei der Anfangstemperatur ({run.temps[0]:.1f} km) wird eine Verlängerung um 5 km mit {np.exp(-5 / run.temps[0]):.0%}, bei der Endtemperatur ({run.temps[-1]:.2f} km) mit {np.exp(-5 / run.temps[-1]):.1%} angenommen. "
+                   "Unten: die Verlängerungen aller Nachbarn der besten gefundenen Tour – bei kleinem T sind nur die kleinsten davon noch erreichbar.")
+    elif settings.rule == "threshold":
+        st.caption(f"Oben: bei der Anfangsschwelle ({run.temps[0]:.1f} km) wird jede Verlängerung bis 5 km angenommen, bei der Endschwelle ({run.temps[-1]:.2f} km) nur noch, wenn sie darunterbleibt – deterministisch, keine Zufallszahl. "
+                   "Unten: die Verlängerungen aller Nachbarn der besten gefundenen Tour.")
+    elif settings.rule == "great_deluge":
+        st.caption("Oben: eine Verlängerung wird angenommen, wenn die neue Tourlänge unter dem Wasserspiegel bleibt – gezeigt als Abstand Spiegel minus aktuelle Tour an drei Stufen, deterministisch. "
+                   "Unten: die Verlängerungen aller Nachbarn der besten gefundenen Tour.")
+    else:
+        st.caption(f"Kein Plan, keine Temperatur: bei L = {settings.lahc_length:,} Vorschlägen vergleicht Late Acceptance jeden Kandidaten mit der Tour von vor L Vorschlägen UND mit der aktuellen Tour – kürzer als eine der beiden reicht.".replace(",", "."))
 elif step == 3:
-    st.caption(f"{_fmt_int(run.proposals)} Vorschläge in {n_levels} Stufen; angenommen wurden {run.accepted / run.proposals:.1%}, davon {a.worse_share:.0%} Verschlechterungen. Die aktuelle Tour (blau) schwankt zuerst stark und beruhigt sich mit der Temperatur; die beste Tour (rot) fällt nur.")
+    stage_noun = "Abschnitten" if settings.rule == "lahc" else "Stufen"
+    st.caption(f"{_fmt_int(run.proposals)} Vorschläge in {n_levels} {stage_noun}; angenommen wurden {run.accepted / run.proposals:.1%}, davon {a.worse_share:.0%} Verschlechterungen. Die aktuelle Tour (blau) schwankt zuerst stark und beruhigt sich mit sinkendem Kontrollwert; die beste Tour (rot) fällt nur.")
 elif step == 4:
     st.caption("Die aktuelle Tour bei der gewählten Stufe (blau), darunter blass die beste Tour am Ende. Bei hoher Temperatur ist die Tour ein Wirrwarr, bei sinkender bildet sich die Struktur heraus.")
 else:
@@ -313,11 +402,13 @@ elif code == "hc_wins":
     st.warning(f"⚠️ Hill Climbing mit Neustarts ist besser: {a.hcr_gap:.1f} % gegen {a.gap:.1f} % über der Schranke bei gleichem Budget ({a.hcr_starts} Abstiege). Bei kleinen Instanzen oder zu kleinem Budget lohnt die Temperatur nicht – "
                "und eine einzelne Kette kann Pech haben.")
 elif code == "too_cold":
+    ctrl_word = {"metropolis": "die Temperatur", "threshold": "die Schwelle", "great_deluge": "der Wasserspiegel"}.get(settings.rule, "L")
     st.warning(f"⚠️ Zu kalt: nur {a.worse_fraction:.2%} der Vorschläge wurden als Verschlechterung angenommen – die Suche verhält sich wie ein Abstieg ({a.gap:.1f} % gegen {a.hc_gap:.1f} % für einen Hill-Climbing-Abstieg). "
-               "Erst wenn die Temperatur in den Bereich der typischen Verlängerungen kommt, entkommt sie den Hügeln.")
+               f"Erst wenn {ctrl_word} in den Bereich der typischen Verlängerungen kommt, entkommt sie den Hügeln.")
 else:
+    end_word = {"metropolis": "Die Endtemperatur", "threshold": "Die Endschwelle", "great_deluge": "Der Endabstand"}.get(settings.rule, "L")
     st.warning(f"⚠️ Das Ende ist zu heiß: die letzte Tour ({a.final_gap:.1f} %) ist {a.final_gap - a.gap:.1f} Prozentpunkte schlechter als die beste ({a.gap:.1f} %) – die Kette kommt nicht zur Ruhe, und die beste Tour ist nur ein Zufallstreffer im Rauschen. "
-               "Die Endtemperatur muss unter die typischen Verlängerungen der Nachbarn einer guten Tour sinken.")
+               f"{end_word} muss unter die typischen Verlängerungen der Nachbarn einer guten Tour sinken.")
 
 d1, d2 = st.columns(2)
 with d1:
@@ -331,9 +422,15 @@ with d1:
               "HC mit Neustarts": [f"{T.tour_length(a.hcr_tour, a.D):.1f}", f"{a.hcr_gap:.2f} %", _fmt_int(settings.budget), unit_time(a.hcr_seconds)]})
 with d2:
     st.markdown("**Was gerechnet wurde**")
-    st.table({"": ["Nachbarschaft", "Abkühlplan", "T0 → T_end (Einheiten)", "Budget", "Stufen", "Startlösung", "Kreuzungen der besten Tour"],
-              "Einstellung": [C.NEIGHBORHOOD_LABELS[settings.neighborhood], C.SCHEDULE_LABELS[settings.schedule], f"{temps_unit[0]:.2f} → {temps_unit[-1]:.3f}", _fmt_int(settings.budget), f"{n_levels}",
-                              C.START_LABELS[settings.start], f"{a.crossings_end}"]})
+    if settings.rule == "lahc":
+        ctrl_row, ctrl_val = "Listenlänge L", f"{settings.lahc_length:,}".replace(",", ".")
+    elif settings.rule == "great_deluge":
+        ctrl_row, ctrl_val = "Anfangs- → Endabstand (Einheiten)", f"{settings.gd_t0:.0f} → {settings.gd_t_end:.1f}"
+    else:
+        ctrl_row, ctrl_val = "T0 → T_end (Einheiten)", f"{temps_unit[0]:.2f} → {temps_unit[-1]:.3f}"
+    st.table({"": ["Nachbarschaft", "Annahmeregel", "Abkühlplan", ctrl_row, "Budget", "Stufen", "Startlösung", "Kreuzungen der besten Tour"],
+              "Einstellung": [C.NEIGHBORHOOD_LABELS[settings.neighborhood], C.RULE_LABELS[settings.rule], C.SCHEDULE_LABELS[settings.schedule] if settings.rule != "lahc" else "–", ctrl_val,
+                              _fmt_int(settings.budget), f"{n_levels}", C.START_LABELS[settings.start], f"{a.crossings_end}"]})
     st.caption("Ein Vorschlag des Simulated Annealing ist ein bewerteter Nachbar, genau wie eine Bewertung im Hill Climbing – aber die Python-Schleife ist je Nachbar langsamer als die vektorisierte Bewertung aller Nachbarn im Abstieg (etwa um ein Mehrfaches (auf dem Entwicklungsrechner etwa das Dreifache)); "
                "die Rechenzeiten hängen vom Rechner ab, nur die Größenordnung zählt. Der Abschlussabstieg (2-opt auf der besten Tour) kostet wenig und hilft vor allem bei großen Instanzen: bei 200 Stopps und 200 Tausend Vorschlägen 7.7 → 7.0 %, bei 60 Stopps 1.4 → 1.4 %.")
 
@@ -378,6 +475,22 @@ if st.session_state.get("budget_on"):
                "Mit 2-opt + Or-opt schrumpft er noch weiter: bei 1 Million Vorschlägen 0.7 % gegen 1.0 % für Hill Climbing mit Neustarts (Hill Climbing hat hier 10 Abstiege). "
                "**Mit Kandidatenliste + Don't-Look-Bits (nur 2-opt gemessen) dreht sich das Bild:** dieselbe Güte braucht bei 60 Stopps nur noch rund 650 statt 74 000 bewertete Nachbarn, das Budget reicht dann für weit mehr Neustarts – Hill Climbing mit Neustarts liegt bei 200 Tausend bei **0.8 %** (Simulated Annealing 1.4 %, also **besser**) und bei 1 Million bei **0.7 %** (**gleichauf** mit Simulated Annealing). "
                "Der oben gezeigte Vorsprung von Simulated Annealing gilt also nur für die bewusst einfache, volle Rescan-Implementierung von Hill Climbing (siehe auch die [Hill-Climbing-Demo](https://sebastianhanisch-hill-climbing-demo.streamlit.app/)).")
+
+st.markdown("---")
+
+st.subheader("🔬 Annahmeregeln im Vergleich: braucht man den Zufall?")
+st.caption("Alle vier Regeln mit ihren eigenen, kalibrierten Reglern (Threshold Accepting: T0/T_end wie in der Seitenleiste; Great Deluge: Anfangs-/Endabstand wie in der Seitenleiste; LAHC: Listenlänge L wie in der Seitenleiste) bei gleichem Budget.")
+if st.button("Alle vier Regeln berechnen (dauert etwa 20 Sekunden)", key="rules_start"):
+    st.session_state["rules_on"] = True
+if st.session_state.get("rules_on"):
+    with st.spinner("Rechne 4 Annahmeregeln × 5 Instanzen × 3 Ketten..."):
+        rows_r = _rule_comparison(base_sweep, settings.budget)
+    st.plotly_chart(build_rule_comparison(rows_r), width="stretch", key="rules_chart")
+    st.table({"Regel": [r["label"] for r in rows_r], "Beste Tour (%)": [f"{r['gap']:.2f}" for r in rows_r], "Streuung (Prozentpunkte)": [f"{r['gap_sd']:.2f}" for r in rows_r],
+              "HC + Neustarts (%)": [f"{r['hcr']:.2f}" for r in rows_r]})
+    st.caption(f"Mittel über 5 feste Instanzen × 3 Ketten bei {_fmt_int(settings.budget)} Vorschlägen (60 Stopps, 2-opt, Standardregler): Metropolis 1.4 %, Late Acceptance Hill Climbing 2.2 %, Threshold Accepting 2.7 %, Great Deluge 3.2 % über der Schranke – "
+               "Hill Climbing mit Neustarts bei gleichem Budget 4.9 %. Alle vier schlagen den Neustart-Abstieg klar; der Zufall in der Annahmeentscheidung (Metropolis) bringt gegenüber den drei deterministischen Regeln noch einen kleinen, aber sichtbaren Vorsprung. "
+               "Die Reihenfolge zwischen den drei deterministischen Regeln ist keine Überraschung aus der Theorie, sondern eine Kalibrierungsfrage: LAHC braucht nur einen Regler (L) und ist am nächsten an Metropolis; Great Deluge hat den größten, am schwersten zu treffenden Regler (Anfangsabstand in absoluten Kilometern über der Schranke).")
 
 st.markdown("---")
 
@@ -436,6 +549,8 @@ st.markdown(
 | **Die letzte Tour ist die beste** | Die Kette vergisst: die letzte Tour liegt im Mittel 0.4 Prozentpunkte hinter der besten (1.8 gegen 1.4 %), bei zu heißem Ende 17.7 (27.2 gegen 9.5 %). Gemerkt wird die beste, aber nicht genutzt. | **Tabu Search** (Gedächtnis), **ILS** (kehrt zur besten Tour zurück) |
 | **Die Theorie trägt** | Der logarithmische Plan garantiert das Optimum in unendlicher Zeit – im endlichen Budget ist er **3.4 %** über der Schranke gegen 1.4 % beim geometrischen. | (kein Nachfolger in der Linie: das ist die Grenze jeder Garantie ohne Zeitgrenze) |
 | **Ein Lauf genügt** | 20 Ketten auf einer Instanz liegen zwischen 0.1 und **5.1 %** über der Schranke (Standardabweichung 1.0 Prozentpunkte); 15 % der Ketten enden mehr als 2 % darüber. | **GRASP** und Wiederholungen (viele Läufe statt einer langen Kette), Hill Climbing mit Neustarts als Maßstab |
+| **Der Ringpuffer kommt nach (LAHC)** | Bei $L$ groß relativ zum Budget hinkt die Historie der tatsächlichen Konvergenz hinterher: **L=500 2.2 %**, L=700 **15.4 %**, L=1000 **44.2 %**, L=3000 **147 %** – kein Fehler in der Formel, sondern eine echte Grenze der Regel bei diesem Budget. | Kein direkter Nachfolger; die Lehre gilt sinngemäß auch für andere Ringpuffer-/Gedächtnisverfahren (**Tabu Search**) |
+| **Der Anfangsspiegel deckt die Startlücke (Great Deluge)** | Ein zu knapper Anfangsabstand ließe die Suche sofort feststecken; die Demo hebt ihn automatisch auf die Startlänge an – trotzdem bleibt das Ergebnis bei knapper Kalibrierung schwächer und wechselhafter (**3.2 %** kalibriert gegen streuender bei zu knappem Anfangsabstand). | (Kalibrierungsfrage, kein Verfahrensnachfolger) |
 """
 )
 st.caption(
@@ -453,8 +568,16 @@ with st.expander("📐 Mathematische Formulierung"):
 **Metropolis-Regel.** Ein Vorschlag $\pi \to \pi'$ mit $\Delta = L(\pi') - L(\pi)$ wird mit $\min\{1, e^{-\Delta/T}\}$ angenommen. Ist der Vorschlag symmetrisch ($q(\pi \to \pi') = q(\pi' \to \pi)$, hier: 2-opt, Or-opt und Tausch mit gleichverteilter Wahl der Kanten), ist bei festem $T$ die **Boltzmann-Verteilung**
 $p_T(\pi) \propto e^{-L(\pi)/T}$ die stationäre Verteilung der Kette (Detailed Balance). Bei $T \to 0$ konzentriert sie sich auf die kürzesten Touren, bei $T \to \infty$ ist sie gleichverteilt – die Demo prüft beides in den Tests (Kette auf 6 Knoten, alle 60 Touren).
 
-**Abkühlplan.** Stufe $k = 0, \dots, K-1$ mit gleichbleibender Temperatur: geometrisch $T_k = T_0 (T_{\text{end}}/T_0)^{k/(K-1)}$, linear $T_k = T_0 + (T_{\text{end}} - T_0)\, k/(K-1)$, logarithmisch $T_k = T_0 \ln 2 / \ln(k+2)$. Nach Hajek konvergiert Simulated Annealing mit $T_k = c / \ln(k+2)$ in Wahrscheinlichkeit gegen ein globales Optimum,
+**Abkühlplan.** Stufe $k = 0, \dots, K-1$ mit gleichbleibendem Kontrollwert: geometrisch $T_k = T_0 (T_{\text{end}}/T_0)^{k/(K-1)}$, linear $T_k = T_0 + (T_{\text{end}} - T_0)\, k/(K-1)$, logarithmisch $T_k = T_0 \ln 2 / \ln(k+2)$. Nach Hajek konvergiert Simulated Annealing mit $T_k = c / \ln(k+2)$ in Wahrscheinlichkeit gegen ein globales Optimum,
 wenn $c$ mindestens die größte Tiefe eines lokalen Minimums ist – in unendlicher Zeit.
+
+**Threshold Accepting** (Dueck & Scheuer 1990). Derselbe Vorschlag $\pi \to \pi'$ wird angenommen, wenn $\Delta \le T_k$ – dieselbe Formel wie Metropolis' Temperaturvergleich, aber ohne Zufallszahl: keine Boltzmann-Verteilung, kein Konvergenzbeweis, nur eine deterministische Faustregel.
+
+**Great Deluge** (Dueck 1993). Ein Vorschlag wird angenommen, wenn die **absolute** neue Tourlänge unter einem Wasserspiegel $B_k = w + T_k$ bleibt: $L(\pi') \le B_k$. Anders als bei den anderen drei Regeln zählt nicht die Änderung $\Delta$, sondern die Gesamtlänge – der Spiegel sinkt nach demselben Plan wie oben, aber $T_0$ muss die anfängliche Lücke $L(\pi_0) - w$ decken;
+die Demo hebt den Anfangsspiegel automatisch auf $\max(w + t_0 \bar d,\, L(\pi_0))$ an, damit eine zu knapp gewählte Anfangslücke nicht zum sofortigen Stillstand führt.
+
+**Late Acceptance Hill Climbing** (Burke & Bykov 2012/2017). Ringpuffer $h_0, \dots, h_{L-1}$ mit Tourlängen, initial $L(\pi_0)$. Beim $k$-ten Vorschlag, $v = k \bmod L$: angenommen, wenn $L(\pi') \le h_v$ **oder** $L(\pi') \le L(\pi)$; danach $h_v \leftarrow L(\pi_{\text{neu}})$. Kein Plan, kein Temperaturbegriff – nur $L$. Bei zu großem $L$ (relativ zum Budget) hinkt der Puffer der tatsächlichen Konvergenz hinterher
+und vergleicht noch lange mit einer sehr alten, schlechten Länge: die Suche nimmt dann fast jeden Vorschlag an und konvergiert nicht (gemessen: $L \le 600$ ist bei 60 Stopps/200 Tausend Vorschlägen sicher, ab $L \approx 700$ bricht die Güte ein).
 
 **Längenänderung eines Vorschlags.** Wie im Hill Climbing aus wenigen Kanten: 2-opt $\Delta = d_{ac} + d_{bd} - d_{ab} - d_{cd}$; Or-opt (Stück $s_0 \dots s_1$ von $p$ nach $q$ zwischen $u$ und $v$ versetzen) $\Delta = d_{u s_0} + d_{s_1 v} - d_{uv} - (d_{p s_0} + d_{s_1 q} - d_{pq})$ (oder umgekehrt eingefügt); Tausch analog.
 
@@ -464,7 +587,7 @@ wenn $c$ mindestens die größte Tiefe eines lokalen Minimums ist – in unendli
 
 **Grenzen.** (1) Der Temperaturbereich muss zur Instanz passen (die Einheit nimmt die Kantenlänge ab, nicht die Struktur). (2) Das nötige Budget wächst stärker als linear mit $n$. (3) Die Nachbarschaft bleibt entscheidend. (4) Die Kette hat kein Gedächtnis außer der besten Tour. (5) Garantien gelten nur für unendliche Zeit.
 
-Implementiert in `sa_algorithm.py` (Metropolis-Kette, Abkühlpläne), `sa_tour.py` (Nachbarschaften, Abstieg, Schranke – aus der Hill-Climbing-Demo), `sa_scenario.py` (Instanzen), `sa_evaluation.py` (Kennzahlen, Sweeps, Experimente, Urteil).
+Implementiert in `sa_algorithm.py` (Kette, Abkühlpläne), `sa_accept_rules.py` (die vier Annahmeregeln als reine Funktionen), `sa_tour.py` (Nachbarschaften, Abstieg, Schranke – aus der Hill-Climbing-Demo), `sa_scenario.py` (Instanzen), `sa_evaluation.py` (Kennzahlen, Sweeps, Experimente, Urteil).
         """
     )
 

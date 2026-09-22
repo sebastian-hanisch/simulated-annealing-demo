@@ -92,6 +92,68 @@ def test_end_temperature_above_start_is_capped_with_a_warning():
     assert any("begrenzt" in w.value for w in at.sidebar.warning)
 
 
+@pytest.mark.parametrize("rule", list(C.RULE_LABELS))
+def test_every_accept_rule_runs_without_exception(rule):
+    at = _run(rule_select=rule, budget_select=25000)
+    _ok(at)
+    assert at.metric
+
+
+@pytest.mark.parametrize("step", [2, 3, 4])
+@pytest.mark.parametrize("rule", list(C.RULE_LABELS))
+def test_every_step_runs_under_every_accept_rule(rule, step):
+    at = _run(rule_select=rule, budget_select=25000, sa_step=step)
+    _ok(at)
+    assert at.get("plotly_chart") and at.session_state["sa_step"] == step
+
+
+def test_switching_to_lahc_hides_schedule_t0_tend_and_levels_but_shows_l():
+    at = _run(budget_select=25000)
+    assert any(s.key == "schedule_select" for s in at.selectbox) and any(s.key == "t0_slider" for s in at.slider) and any(s.key == "levels_select" for s in at.select_slider)
+    at.selectbox(key="rule_select").set_value("lahc").run()
+    _ok(at)
+    assert not any(s.key == "schedule_select" for s in at.selectbox)
+    assert not any(s.key == "t0_slider" for s in at.slider) and not any(s.key == "tend_slider" for s in at.slider)
+    assert not any(s.key == "levels_select" for s in at.select_slider)
+    assert any(s.key == "lahc_length_slider" for s in at.slider)
+    at.selectbox(key="rule_select").set_value("metropolis").run()
+    _ok(at)
+    assert any(s.key == "t0_slider" for s in at.slider) and any(s.key == "levels_select" for s in at.select_slider)
+
+
+def test_switching_to_great_deluge_shows_gd_sliders_and_hides_metropolis_t0():
+    at = _run(budget_select=25000)
+    at.selectbox(key="rule_select").set_value("great_deluge").run()
+    _ok(at)
+    assert not any(s.key == "t0_slider" for s in at.slider) and not any(s.key == "tend_slider" for s in at.slider)
+    assert any(s.key == "gd_t0_slider" for s in at.slider) and any(s.key == "gd_tend_slider" for s in at.slider)
+    assert any(s.key == "levels_select" for s in at.select_slider)                    # Great Deluge behaelt den Plan fuer die Form des Spiegels
+
+
+def test_great_deluge_anfangsabstand_below_start_is_auto_lifted_and_does_not_explode():
+    at = _run(rule_select="great_deluge", gd_t0_slider=50.0, budget_select=25000)
+    _ok(at)
+    assert _metric(at, "Beste Tour") is not None
+    gap = float(_metric(at, "Beste Tour").rstrip(" %").replace(",", "."))
+    assert gap < 500.0                                                                 # kein katastrophaler Ausreisser (ohne Anhebung: >800 % bei n=200) trotz viel zu kleinem Anfangsabstand
+
+
+def test_threshold_accepting_reuses_schedule_sliders_with_relabeled_help():
+    at = _run(rule_select="threshold", budget_select=25000)
+    _ok(at)
+    t0 = next(s for s in at.slider if s.key == "t0_slider")
+    assert "Schwelle" in t0.help or "schwelle" in t0.help.lower()
+
+
+def test_rule_comparison_experiment_runs_on_demand():
+    at = _run(n_slider=10, budget_select=10000)
+    next(b for b in at.button if b.key == "rules_start").click().run()
+    _ok(at)
+    assert at.session_state["rules_on"] and at.get("plotly_chart")
+    tbl = next(t for t in at.get("table") if "Regel" in t.value)
+    assert set(tbl.value["Regel"]) == set(C.RULE_LABELS.values())
+
+
 def test_dice_buttons_change_the_seeds():
     at = _run(budget_select=10000)
     old = at.session_state["seed_input"]
