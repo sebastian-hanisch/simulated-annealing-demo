@@ -106,17 +106,24 @@ def build_trace(trace_iter, trace_length, trace_best, bound, hc_length, hcr_leng
     return _base(fig, 320)
 
 
-def build_budget(rows):
-    """Abstand zur Schranke über das Budget: Simulated Annealing gegen einen Hill-Climbing-Abstieg und Hill Climbing mit Neustarts (gleiches Budget)."""
+DLB_COLOR = "#54a24b"
+
+
+def build_budget(rows, dlb_rows=None):
+    """Abstand zur Schranke über das Budget: Simulated Annealing gegen einen Hill-Climbing-Abstieg und Hill Climbing mit Neustarts (gleiches Budget, voller Rescan).
+    `dlb_rows` (optional, dieselben Budgetwerte wie `rows`): Hill Climbing mit Neustarts über Kandidatenliste + Don't-Look-Bits statt vollem Rescan (nur 2-opt gemessen)."""
     xs = [r["value"] for r in rows]
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=xs, y=[r["gap"] for r in rows], mode="lines+markers", line=dict(color=SA_COLOR, width=2.5), name="Simulated Annealing (beste Tour)"))
     fig.add_trace(go.Scatter(x=xs, y=[r["final"] for r in rows], mode="lines+markers", line=dict(color=SA_COLOR, width=1.5, dash="dot"), name="Simulated Annealing (letzte Tour)"))
-    fig.add_trace(go.Scatter(x=xs, y=[r["hcr"] for r in rows], mode="lines+markers", line=dict(color=HCR_COLOR, width=2.5), name="Hill Climbing mit Neustarts"))
+    fig.add_trace(go.Scatter(x=xs, y=[r["hcr"] for r in rows], mode="lines+markers", line=dict(color=HCR_COLOR, width=2.5), name="Hill Climbing mit Neustarts (voller Rescan)"))
     fig.add_trace(go.Scatter(x=xs, y=[r["hc"] for r in rows], mode="lines", line=dict(color=HC_COLOR, width=1.5, dash="dash"), name="ein Abstieg"))
+    if dlb_rows is not None:
+        fig.add_trace(go.Scatter(x=[r["value"] for r in dlb_rows], y=[r["gap"] for r in dlb_rows], mode="lines+markers", line=dict(color=DLB_COLOR, width=2.5), name="Hill Climbing mit Neustarts (Kandidatenliste + DLB)"))
     fig.update_xaxes(title_text="Budget (Vorschläge = bewertete Nachbarn)", type="log")
     fig.update_yaxes(title_text="Abstand zur Schranke (%)")
-    return _base(fig, 340)
+    fig.update_layout(legend=dict(orientation="h", y=-0.3))
+    return _base(fig, 380)
 
 
 def build_sweep(rows, param_label, categorical=False, key_labels=None):

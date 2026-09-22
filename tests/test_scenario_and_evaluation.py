@@ -155,3 +155,24 @@ def test_chain_spread_returns_one_value_per_chain_and_is_deterministic():
     a = ev.chain_spread(ev.Settings(n=15, budget=3000), 5)
     b = ev.chain_spread(ev.Settings(n=15, budget=3000), 5)
     assert len(a["sa"]) == len(a["hc"]) == 5 and np.array_equal(a["sa"], b["sa"]) and np.array_equal(a["hc"], b["hc"])
+
+
+# --- Kandidatenlisten + Don't-Look-Bits (sa_dlb.py) ----------------------------------------------------------------------------------------
+
+
+def test_dlb_restarts_uses_at_least_one_descent_and_is_far_cheaper_than_a_full_rescan_restart():
+    inst, D = ev.instance(60, 0, 100000)
+    cand = ev.DLB.build_candidate_lists(D)
+    best, starts, used = ev.dlb_restarts(D, cand, 1000, 0)
+    assert starts >= 1 and used >= 1000
+    hcr_tour, starts_hcr, used_hcr = ev.hill_climbing_restarts(D, 200000, 0)         # gibt eine Tour zurück, nicht die Länge
+    best_dlb, starts_dlb, used_dlb = ev.dlb_restarts(D, cand, 200000, 0)             # gibt die Länge zurück
+    assert starts_dlb > 20 * starts_hcr                          # gemessen: ~300 gegen ~3 Starts bei gleichem Budget
+    assert best_dlb <= T.tour_length(hcr_tour, D)
+
+
+def test_dlb_budget_sweep_structure_and_monotonicity():
+    rows = ev.dlb_budget_sweep(values=(25000, 200000), seeds=(100000, 100001), chains=2)
+    assert [r["value"] for r in rows] == [25000, 200000]
+    assert rows[1]["starts"] > rows[0]["starts"]
+    assert rows[1]["gap"] <= rows[0]["gap"] + 1.0                 # mehr Budget wird nicht schlechter (bis auf Rauschen)

@@ -16,7 +16,7 @@ import streamlit as st
 
 import sa_constants as C
 import sa_tour as T
-from sa_evaluation import SWEEP_LABELS, Settings, analyse, chain_spread, heatmap_table, scaling_table, sweep, verdict
+from sa_evaluation import SWEEP_LABELS, Settings, analyse, chain_spread, dlb_budget_sweep, heatmap_table, scaling_table, sweep, verdict
 from sa_presets import (
     apply_preset,
     bounds,
@@ -39,6 +39,11 @@ def _analysis(settings):
 @st.cache_data(show_spinner=False)
 def _sweep(param, base):
     return sweep(param, base)
+
+
+@st.cache_data(show_spinner=False)
+def _dlb_budget(base):
+    return dlb_budget_sweep(base=base)
 
 
 @st.cache_data(show_spinner=False)
@@ -360,12 +365,19 @@ if st.button("Budget von 10 Tausend bis 2 Millionen durchfahren (dauert etwa 30 
 if st.session_state.get("budget_on"):
     with st.spinner("Rechne 8 Budgets × 5 Instanzen × 3 Ketten..."):
         rows_b = _sweep("budget", base_sweep)
-    st.plotly_chart(build_budget(rows_b), width="stretch", key="budget_chart")
-    st.table({"Budget": [_fmt_int(r["value"]) for r in rows_b], "SA beste Tour (%)": [f"{r['gap']:.1f}" for r in rows_b], "SA letzte Tour (%)": [f"{r['final']:.1f}" for r in rows_b],
-              "HC mit Neustarts (%)": [f"{r['hcr']:.1f}" for r in rows_b], "Abstiege": [f"{r['starts']:.1f}" for r in rows_b], "ein Abstieg (%)": [f"{r['hc']:.1f}" for r in rows_b]})
+        dlb_rows_b = _dlb_budget(base_sweep) if settings.neighborhood == "2opt" else None
+    st.plotly_chart(build_budget(rows_b, dlb_rows_b), width="stretch", key="budget_chart")
+    table = {"Budget": [_fmt_int(r["value"]) for r in rows_b], "SA beste Tour (%)": [f"{r['gap']:.1f}" for r in rows_b], "SA letzte Tour (%)": [f"{r['final']:.1f}" for r in rows_b],
+             "HC + Neustarts, voller Rescan (%)": [f"{r['hcr']:.1f}" for r in rows_b], "Abstiege": [f"{r['starts']:.1f}" for r in rows_b], "ein Abstieg (%)": [f"{r['hc']:.1f}" for r in rows_b]}
+    if dlb_rows_b is not None:
+        table["HC + Neustarts, Kandidatenliste + DLB (%)"] = [f"{r['gap']:.1f}" for r in dlb_rows_b]
+        table["Abstiege (DLB)"] = [f"{r['starts']:.0f}" for r in dlb_rows_b]
+    st.table(table)
     st.caption(f"Mittel über 5 feste Instanzen × 3 Ketten (Einstellungen wie in der Seitenleiste: {settings.n} Stopps, {C.NEIGHBORHOOD_LABELS[settings.neighborhood]}). Bei 60 Stopps, 2-opt und dem Standardplan: unter etwa 25 Tausend Vorschlägen ist Simulated Annealing nicht besser als ein Abstieg (10 Tausend: 8.0 % gegen 7.9 %); "
-               "danach liegt es klar vorn (25 Tausend: 4.1 %, 200 Tausend: 1.4 %, 1 Million: 0.7 %), aber der Vorsprung gegenüber Hill Climbing mit Neustarts schrumpft mit dem Budget: 4.9 % gegen 1.4 % bei 200 Tausend, 2.5 % gegen 0.7 % bei 1 Million, 1.9 % gegen 0.5 % bei 2 Millionen. "
-               "Mit 2-opt + Or-opt schrumpft er noch weiter: bei 1 Million Vorschlägen 0.7 % gegen 1.0 % für Hill Climbing mit Neustarts (Hill Climbing hat hier 10 Abstiege).")
+               "danach liegt es klar vorn gegenüber Hill Climbing mit vollem Rescan (25 Tausend: 4.1 %, 200 Tausend: 1.4 %, 1 Million: 0.7 %) – gegenüber Neustarts mit vollem Rescan (4.9 % bei 200 Tausend, 2.5 % bei 1 Million) schrumpft der Vorsprung mit dem Budget. "
+               "Mit 2-opt + Or-opt schrumpft er noch weiter: bei 1 Million Vorschlägen 0.7 % gegen 1.0 % für Hill Climbing mit Neustarts (Hill Climbing hat hier 10 Abstiege). "
+               "**Mit Kandidatenliste + Don't-Look-Bits (nur 2-opt gemessen) dreht sich das Bild:** dieselbe Güte braucht bei 60 Stopps nur noch rund 650 statt 74 000 bewertete Nachbarn, das Budget reicht dann für weit mehr Neustarts – Hill Climbing mit Neustarts liegt bei 200 Tausend bei **0.8 %** (Simulated Annealing 1.4 %, also **besser**) und bei 1 Million bei **0.7 %** (**gleichauf** mit Simulated Annealing). "
+               "Der oben gezeigte Vorsprung von Simulated Annealing gilt also nur für die bewusst einfache, volle Rescan-Implementierung von Hill Climbing (siehe auch die [Hill-Climbing-Demo](https://sebastianhanisch-hill-climbing-demo.streamlit.app/)).")
 
 st.markdown("---")
 

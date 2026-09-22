@@ -295,3 +295,24 @@ def test_bound_is_close_to_the_optimum_for_uniform_stops_and_simulated_annealing
         best_sa.append(100 * (a.run.best_length - opt) / opt)
     near(float(np.mean(gaps)), 0.5, 0.3)
     assert float(np.mean(best_sa)) < 0.8                                   # bei 1 Million Vorschlägen liegt die Kette im Mittel unter 0.8 % über dem echten Optimum
+
+
+# --- Kandidatenlisten + Don't-Look-Bits (Experiment, nur 2-opt) ----------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=None)
+def _dlb_budget():
+    return ev.dlb_budget_sweep()
+
+
+@pytest.mark.parametrize("budget,gap", [(200000, 0.8), (1000000, 0.7)])
+def test_dlb_budget_numbers_of_the_app_caption(budget, gap):
+    row = next(r for r in _dlb_budget() if r["value"] == budget)
+    near(row["gap"], gap, 0.5)
+
+
+def test_dlb_beats_sa_at_200k_and_ties_at_1m():
+    rows = {r["value"]: r["gap"] for r in _dlb_budget()}
+    sa_200k, sa_1m = cfg(budget=200000)["gap"], cfg(budget=1000000)["gap"]
+    assert rows[200000] < sa_200k - 0.3                             # deutlich besser
+    assert abs(rows[1000000] - sa_1m) < 0.3                         # praktisch gleichauf

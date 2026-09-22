@@ -35,6 +35,7 @@ der Vorsprung vor den Neustarts **schrumpft mit dem Budget** (mit 2-opt + Or-opt
 | **Abschlussabstieg** | ➖ Ein 2-opt-Abstieg auf der besten Tour kostet wenig und hilft bei großen Instanzen: 200 Stopps, 200 Tausend Vorschläge 7.7 → 7.0 %; 60 Stopps 1.4 → 1.4 % |
 | **Optimum** | ✅ Bei 1 Million Vorschlägen liegt die Kette auf den fünf Instanzen im Mittel unter 0.8 % über dem echten Optimum (CP-SAT); die beste von 15 Ketten mit 200 Tausend Vorschlägen liegt nur 0.08 % über der Schranke |
 | Rechenzeit | ➖ Ein Vorschlag kostet in der Python-Schleife ein Mehrfaches (auf dem Entwicklungsrechner etwa das Dreifache) einer Bewertung im vektorisierten Abstieg; 200 Tausend Vorschläge dauern dort etwa 0.1 s. Nur die Größenordnung zählt |
+| **Kandidatenlisten + Don't-Look-Bits (Hill Climbing)** | ⚠️ Der Vergleich mit Hill Climbing oben gilt nur für den vollen Rescan (keine Nachbarschaftslisten, keine Don't-Look-Bits). Mit Kandidatenliste + DLB braucht ein Abstieg nur noch ~650 statt 74 000 Bewertungen; bei gleichem Budget erreicht Hill Climbing mit Neustarts **0.8 %** bei 200 Tausend (**besser** als Simulated Annealing) und **0.7 %** bei 1 Million (**gleichauf**) |
 
 ## Was die Demo zeigt
 
@@ -42,7 +43,7 @@ der Vorsprung vor den Neustarts **schrumpft mit dem Budget** (mit 2-opt + Or-opt
    **Tour bei sinkender Temperatur** (Stufen-Regler und ▶️ Abkühlen abspielen: die aktuelle Tour, blass die beste darunter) → **Ergebnis** (die beste Tour der Kette neben der besten aus Hill Climbing mit Neustarts).
 2. **Was die Kette gefunden hat:** beste und letzte Tour, ein Abstieg, Hill Climbing mit Neustarts (gleiches Budget), angenommene Verschlechterungen; Urteil (`too_hot` → `too_cold` → `beats_hc` → `hc_wins` → `comparable`), Detailtabelle, Abschlussabstieg.
 3. **📐 Sweeps** über Budget, Anfangs- und Endtemperatur, Plan, Nachbarschaft, Stufen, Stopps, Gruppen und Startlösung (feste Instanzen ab 100000, drei Ketten je Instanz).
-4. **🔬 Experimente auf Abruf:** Budget von 10 Tausend bis 2 Millionen (Simulated Annealing gegen Abstieg und Neustarts); **Temperaturfenster** (Anfangs- gegen Endtemperatur als Heatmap); **Streuung** über 20 Ketten; **Skalierung** von 20 bis 200 Stopps mit zwei Budgetregeln.
+4. **🔬 Experimente auf Abruf:** Budget von 10 Tausend bis 2 Millionen (Simulated Annealing gegen Abstieg und Neustarts, bei 2-opt zusätzlich Neustarts mit Kandidatenliste + Don't-Look-Bits); **Temperaturfenster** (Anfangs- gegen Endtemperatur als Heatmap); **Streuung** über 20 Ketten; **Skalierung** von 20 bis 200 Stopps mit zwei Budgetregeln.
 5. **🚧 Grenzen:** Tabelle "Annahme – was passiert – wer setzt an" (die Temperatur passt zur Instanz, das Budget reicht, die Nachbarschaft ist gut, die letzte Tour ist die beste, die Theorie trägt, ein Lauf genügt).
 
 Regler: Stopps (10–200), Anteil der Stopps in Gruppen, **Nachbarschaft** (Tausch / 2-opt / Or-opt / 2-opt + Or-opt), **Abkühlplan** (geometrisch / linear / logarithmisch), **Anfangstemperatur**, **Endtemperatur** (beim logarithmischen Plan ausgeblendet, der Wert bleibt erhalten; über der Anfangstemperatur wird sie auf diese begrenzt),
@@ -68,19 +69,12 @@ Die Presets zeigen einzelne Instanzen und Ketten – auf dieser Instanz ist die 
 - **Instanz, Nachbarschaften, Abstieg, Schranke** (`sa_scenario.py`, `sa_tour.py`): wortgleiche Kopie aus der [hill-climbing-demo](../hill-climbing-demo) (per Test gegen eingefrorene Werte); neu ist nur das Bewertungsbudget `max_evaluations` im Abstieg.
 - **Kette** (`sa_algorithm.py`, Python/numpy von Grund auf): je Vorschlag ein zufälliger Nachbar (2-opt: gleichverteiltes Paar von Kanten, Or-opt: Segmentlänge 1–3, Position, Ziel und Richtung gleichverteilt, Tausch, oder eine Mischung), Δ in O(1) aus wenigen Kanten, Metropolis-Regel, Zufallszahlen vorab gezogen; die beste Tour wird gemerkt.
   **Ein Vorschlag = ein bewerteter Nachbar**, wie das Hill Climbing seine Bewertungen zählt. Temperatur in **Vielfachen der mittleren Kantenlänge einer guten Tour** (untere Schranke geteilt durch die Zahl der Knoten), in Stufen: geometrisch, linear, logarithmisch (Hajek). **Verlauf**, Annahmequoten je Stufe und Momentaufnahmen je Stufe für die Darstellung.
-- **Hill Climbing mit Neustarts** (`sa_evaluation.py`): Abstiege aus zufälligen Startlösungen, bis die bewerteten Nachbarn das Budget erreichen; der erste läuft immer zu Ende, weitere mit dem Rest des Budgets (die Demo bewertet nach jedem Zug alle Nachbarn neu – ohne Nachbarschaftslisten wäre Hill Climbing bei gleichem Budget stärker).
-- **Auswertung** (`sa_evaluation.py`): Kennzahlen, Urteil, Sweeps über feste Instanzen × Ketten, Temperaturfenster, Skalierung, Streuung.
-
-## Nachtrag (2026-09-22): der Vergleich gilt nur für dieses Hill Climbing
-
-Der Vergleich mit Hill Climbing auf dieser Seite bewertet nach jedem Zug **alle** Nachbarn neu (keine Nachbarschaftslisten, keine Don't-Look-Bits – bewusst, siehe Grenzen-Tabelle unten und die der [hill-climbing-demo](../hill-climbing-demo)). Eine Messreihe (kein eigenes Demo-Stück; vor dem geplanten Lin-Kernighan-Stück) mit einem **Kandidatenlisten- und Don't-Look-Bit-2-opt** (Nachbarschaft auf die 5 nächsten Knoten je Stopp beschränkt, Warteschlange nur über Knoten mit geänderten Kanten) zeigt:
-ein Abstieg erreicht bei 60 Stopps dieselbe Güte wie im Standardfall oben (≈7 % über der Schranke) mit nur noch **rund 650 statt 74 000 bewerteten Nachbarn – dem Hundertfachen weniger**. Bei gleichem Budget wie in der Tabelle oben (200 Tausend / 1 Million) reicht das für **312 / 1 561 Neustarts statt 3.2 / 14**, und Hill Climbing mit Neustarts erreicht damit **0.7 % / 0.6 %** über der Schranke – **knapp besser als Simulated Annealing** in dieser Tabelle (1.4 % / 0.7 %).
-Die Kandidatenliste kostet Exaktheit (bei 60 Stopps sind nur noch 51 % der Abstiege echte 2-opt-Optima, gegen 100 % auf kleinen Testinstanzen), aber messbar keine Güte. **Die Kernaussage dieser Seite gilt also nur für die hier bewusst einfach gehaltene Hill-Climbing-Implementierung**, nicht für Hill Climbing an sich: der eigentliche Unterschied zwischen den beiden Läufen war nicht "Temperatur schlägt reines Verbessern", sondern "billige gegen teure Bewertungen".
-Die Demo selbst bleibt unverändert (das ist bewusst die einfache, gut lesbare Fassung); Kandidatenlisten und Don't-Look-Bits sind das Thema eines späteren Stücks der Nachbarschafts-Linie.
+- **Hill Climbing mit Neustarts** (`sa_evaluation.py`): Abstiege aus zufälligen Startlösungen, bis die bewerteten Nachbarn das Budget erreichen; der erste läuft immer zu Ende, weitere mit dem Rest des Budgets. Im Hauptvergleich bewertet der Abstieg nach jedem Zug alle Nachbarn neu (keine Nachbarschaftslisten, keine Don't-Look-Bits); das Experiment "Budget" zeigt zusätzlich Neustarts mit **Kandidatenliste + Don't-Look-Bits** (`sa_dlb.py`, wörtliche Kopie aus der [hill-climbing-demo](../hill-climbing-demo), nur 2-opt).
+- **Auswertung** (`sa_evaluation.py`): Kennzahlen, Urteil, Sweeps über feste Instanzen × Ketten, Temperaturfenster, Skalierung, Streuung, Kandidatenlisten + Don't-Look-Bits.
 
 ## Was nicht funktioniert hat / Grenzen
 
-- **Vorab-Vermutungen (vor dem Bau gemessen):** (1) "Bei gleichem Budget schlägt Simulated Annealing das Hill Climbing" – **bestätigt**, aber mit Einschränkung: nicht bei 10 Tausend Vorschlägen (ein Abstieg braucht 74 Tausend), und **bei 2-opt + Or-opt und 1 Million Vorschlägen fast gleichauf** mit Neustarts (0.7 % gegen 1.0 %).
+- **Vorab-Vermutungen (vor dem Bau gemessen):** (1) "Bei gleichem Budget schlägt Simulated Annealing das Hill Climbing" – **bestätigt, aber nur für den vollen Rescan**: nicht bei 10 Tausend Vorschlägen (ein Abstieg braucht 74 Tausend), **bei 2-opt + Or-opt und 1 Million Vorschlägen fast gleichauf** mit Neustarts (0.7 % gegen 1.0 %), und mit **Kandidatenliste + Don't-Look-Bits** (Messreihe 2026-09-22, kein Teil der ursprünglichen Vermutung) dreht sich das Bild bei 2-opt sogar um: 0.8 % bei 200 Tausend Vorschlägen (Simulated Annealing 1.4 %), gleichauf bei 1 Million (0.7 % beide) – der eigentliche Unterschied war nicht "Temperatur schlägt reines Verbessern", sondern "billige gegen teure Bewertungen" (Details in der [Hill-Climbing-Demo](https://sebastianhanisch-hill-climbing-demo.streamlit.app/)).
   (2) "Die Temperatur ist der Regler, es gibt ein Fenster" – **bestätigt, aber asymmetrisch**: die Endtemperatur ist eng (0.5 Einheiten: 9.5 %), die Anfangstemperatur weit (0.25 bis 4 Einheiten alle unter 3 %). (3) "Der Abkühlplan macht wenig Unterschied" – **halb**: geometrisch und linear gleich (1.4 / 1.3 %), der logarithmische (theoretisch optimal) deutlich schlechter (3.4 %).
   (4) "SA + 2-opt ≈ SA + 2-opt/Or-opt" – **bestätigt** (1.4 / 1.2 %), im Gegensatz zum Hill Climbing (7.9 / 3.7 %): die Temperatur nimmt der Nachbarschaft viel von ihrer Bedeutung, aber Tausch allein bleibt schlecht (22.6 %). (5) "Die Streuung über Ketten ist kleiner als beim Hill Climbing" – bestätigt (1.0 gegen 2.4 Prozentpunkte), aber nicht null (0.1 bis 5.1 %).
   (6) "Das nötige Budget wächst mit n stärker als linear" – **bestätigt**: 5 000 Vorschläge je Stopp reichen nicht (0.9 % bei 40, 4.1 % bei 200 Stopps). (7) "Die Kette braucht weniger Rechenzeit je Nachbar als der vektorisierte Abstieg" – **falsch**: je Vorschlag ein Mehrfaches (etwa das Dreifache).
@@ -93,20 +87,22 @@ Die Demo selbst bleibt unverändert (das ist bewusst die einfache, gut lesbare F
 - **Kette:** die im Lauf mitgeführte Länge gegen die **neu gemessene Tourlänge jeder Momentaufnahme** (alle vier Nachbarschaften, auch die Tausch- und Or-opt-Sonderfälle); Budget = Zahl der gültigen Vorschläge; beste Tour nie länger als die letzte, monoton über die Stufen; Determinismus je Seed;
   **T → 0** nimmt keine Verschlechterung an und endet in einem 2-opt-Optimum, **T → ∞** nimmt alles an; **Boltzmann-Verteilung**: eine lange Kette bei festem T auf einer Instanz mit 6 Knoten besucht die 60 Touren im Verhältnis e^(−L/T) (Totalvariationsabstand unter 0.06, für Tausch, 2-opt, Or-opt und die Mischung) – das prüft Vorschlagssymmetrie, Metropolis-Regel und Längenänderung zugleich; Annahmequote gegen die Formel.
 - Übernommener Kern: 2-opt gegen Brute-Force, Abstieg strikt monoton und im lokalen Optimum, Bewertungsbudget, 1-Baum-Schranke gegen Brute-Force (n = 8) und CP-SAT (n = 20); Instanz gegen eingefrorene Werte.
-- **Alle Zahlen der App-Texte sind als Tests hinterlegt** (Seitenleiste, Presets, Grenzen-Tabelle, Budget-, Temperatur-, Plan-, Nachbarschafts-, Stufen-, Größen-, Streuungs- und Heatmap-Aussagen, Schranke und Optimum gegen CP-SAT; jeweils Mittel über die festen Sweep-Instanzen × Ketten; positive **und** negative Aussagen; Rechenzeiten nur als Größenordnung);
+- **Kandidatenlisten + Don't-Look-Bits:** wörtliche Kopie der Korrektheitstests aus der Hill-Climbing-Demo (Permutation, Längenbuchhaltung, 100 % echte 2-opt-Optima bei kleinen Instanzen, weit weniger Bewertungen bei 60 Stopps).
+- **Alle Zahlen der App-Texte sind als Tests hinterlegt** (Seitenleiste, Presets, Grenzen-Tabelle, Budget-, Temperatur-, Plan-, Nachbarschafts-, Stufen-, Größen-, Streuungs- und Heatmap-Aussagen, Kandidatenlisten + Don't-Look-Bits, Schranke und Optimum gegen CP-SAT; jeweils Mittel über die festen Sweep-Instanzen × Ketten; positive **und** negative Aussagen; Rechenzeiten nur als Größenordnung);
   alle 8 Presets über mehrere Instanzen und Ketten in Urteil-Bändern; AppTest-Rauchtests (Voreinstellung, jedes Preset, jeder Schritt bei 10 und 60 Stopps, Stufen-Regler, ▶️ Abspielen und ▶️ Abkühlen abspielen ohne doppelte Schlüssel, ausgeblendete Endtemperatur, Begrenzung, Würfel-Knöpfe, Permalink-Grenzen, Extremwerte, Experimente auf Abruf, Footer).
 
 ## Dateistruktur
 
 | Datei | Zweck |
 |---|---|
-| `app.py` | Streamlit-App: Schritte, Ergebnis, 📐 Sweeps, 🔬 Experimente (Budget, Temperaturfenster, Streuung, Skalierung), 🚧 Grenzen, Mathe |
+| `app.py` | Streamlit-App: Schritte, Ergebnis, 📐 Sweeps, 🔬 Experimente (Budget inkl. Kandidatenliste + DLB, Temperaturfenster, Streuung, Skalierung), 🚧 Grenzen, Mathe |
 | `sa_algorithm.py` | Metropolis-Kette, Abkühlpläne, Vorschläge (2-opt, Or-opt, Tausch) |
 | `sa_tour.py` | Nachbarschaften, Abstieg (mit Bewertungsbudget), Kreuzungen, 1-Baum-Schranke (aus der Hill-Climbing-Demo) |
+| `sa_dlb.py` | Kandidatenlisten + Don't-Look-Bits für 2-opt (aus der Hill-Climbing-Demo) |
 | `sa_scenario.py`, `sa_constants.py` | Instanzen (gleichverteilt, in Gruppen); Konstanten, Presets |
-| `sa_evaluation.py` | Analyse, Urteil, Hill Climbing mit Neustarts, Sweeps, Temperaturfenster, Skalierung, Streuung |
+| `sa_evaluation.py` | Analyse, Urteil, Hill Climbing mit Neustarts, Sweeps, Temperaturfenster, Skalierung, Streuung, Kandidatenlisten + Don't-Look-Bits |
 | `sa_presets.py`, `sa_visualization.py` | Permalink/Presets (ausgeblendete Endtemperatur), Plotly-Figuren (achsengesperrt) |
-| `tests/` | Kette (Boltzmann-Verteilung, Grenzfälle), übernommener Kern, Szenario und Auswertung, Aussagen der App, Presets, AppTest |
+| `tests/` | Kette (Boltzmann-Verteilung, Grenzfälle), übernommener Kern, Kandidatenlisten + Don't-Look-Bits, Szenario und Auswertung, Aussagen der App, Presets, AppTest |
 
 ## Lokal ausführen
 

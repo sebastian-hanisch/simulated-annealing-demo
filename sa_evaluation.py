@@ -11,6 +11,7 @@ import numpy as np
 
 import sa_algorithm as SA
 import sa_constants as C
+import sa_dlb as DLB
 import sa_scenario as S
 import sa_tour as T
 
@@ -241,3 +242,43 @@ def chain_spread(settings, k=C.SPREAD_CHAINS):
         sa_gaps.append(a.gap)
         hc_gaps.append(a.hc_gap)
     return {"sa": np.array(sa_gaps), "hc": np.array(hc_gaps)}
+
+
+# --- Kandidatenlisten + Don't-Look-Bits (sa_dlb.py) --------------------------------------------------------------------------------------------
+# Nur 2-opt (siehe sa_dlb.py); zeigt, dass der Vergleich mit Hill Climbing oben nur für den vollen Rescan gilt
+# (Messreihe 2026-09-22, project_trajectory_metaheuristics_dag_scoping.md): bei gleichem Budget schlägt Hill
+# Climbing mit Neustarts und Kandidatenliste + Don't-Look-Bits Simulated Annealing knapp.
+
+
+def dlb_restarts(D, cand, budget, seed):
+    """Wie hill_climbing_restarts, mit dem Kandidatenlisten- + Don't-Look-Bit-Abstieg (sa_dlb.dlb_descend) statt dem vollen Rescan.
+    Anders als hill_climbing_restarts gibt diese Funktion die beste Länge direkt zurück, nicht die Tour (hier nicht gebraucht)."""
+    rng = np.random.default_rng(seed)
+    used, starts, best = 0, 0, None
+    while used < budget or best is None:
+        cap = None if best is None else budget - used
+        r = DLB.dlb_descend(D, T.random_tour(len(D), rng), cand, seed=starts, max_evaluations=cap)
+        used += r.evaluations
+        starts += 1
+        if best is None or r.length < best:
+            best = r.length
+    return best, starts, used
+
+
+def dlb_budget_sweep(base=Settings(), values=None, seeds=C.SWEEP_SEEDS, chains=C.SWEEP_CHAINS):
+    """Wie sweep('budget', ...), aber Hill Climbing mit Neustarts über Kandidatenliste + Don't-Look-Bits statt vollem
+    Rescan (nur 2-opt). Gleiche Budgetpunkte wie SWEEP_VALUES['budget']; gibt [{'value', 'gap', 'starts'}, ...] zurück."""
+    values = SWEEP_VALUES["budget"] if values is None else values
+    rows = []
+    for budget in values:
+        gaps, starts_l = [], []
+        for seed in seeds:
+            inst, D = instance(base.n, base.cluster_share, seed)
+            bound = reference_bound(base.n, base.cluster_share, seed)
+            cand = DLB.build_candidate_lists(D)
+            for ch in range(chains):
+                best, starts, _ = dlb_restarts(D, cand, budget, ch * 1000 + seed)
+                gaps.append(100 * (best - bound) / bound)
+                starts_l.append(starts)
+        rows.append({"value": budget, "gap": float(np.mean(gaps)), "starts": float(np.mean(starts_l))})
+    return rows

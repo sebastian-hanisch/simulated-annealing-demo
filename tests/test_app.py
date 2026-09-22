@@ -143,6 +143,19 @@ def test_experiments_run_on_demand(monkeypatch):
         assert at.session_state[flag]
 
 
+def test_budget_experiment_shows_dlb_column_only_for_two_opt(monkeypatch):
+    monkeypatch.setitem(ev.SWEEP_VALUES, "budget", (2000, 5000))
+    at = _run(n_slider=10, budget_select=10000)
+    next(b for b in at.button if b.key == "budget_start").click().run()
+    _ok(at)
+    tbl = next(t for t in at.get("table") if "Budget" in t.value)
+    assert "HC + Neustarts, Kandidatenliste + DLB (%)" in tbl.value
+    at.selectbox(key="neighborhood_select").set_value("oropt").run()
+    _ok(at)
+    tbl2 = next(t for t in at.get("table") if "Budget" in t.value)
+    assert "HC + Neustarts, Kandidatenliste + DLB (%)" not in tbl2.value
+
+
 def test_footer_and_grenzen_are_present():
     at = _run(budget_select=10000)
     assert any("Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net)" in c.value for c in at.caption)
