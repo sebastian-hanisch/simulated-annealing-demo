@@ -24,6 +24,7 @@ from sa_presets import (
     load_permalink_settings,
     randomize_chain_seed,
     randomize_seed,
+    seed_widget,
     sync_query_params,
 )
 from sa_visualization import build_acceptance, build_budget, build_cooling, build_heatmap, build_instance, build_rule_comparison, build_scaling, build_spread, build_sweep, build_tour, build_trace
@@ -159,6 +160,7 @@ with st.sidebar:
         )
         st.session_state["_kept_t0_slider"] = t0
         if schedule != "log":
+            seed_widget("tend_slider")
             t_end = st.slider(
                 "Endtemperatur" if rule == "metropolis" else "Endschwelle", *bounds("tend_slider"), key="tend_slider", step=C.T_END_STEP, format="%.3f",
                 help=("In Vielfachen der mittleren Kantenlänge einer guten Tour (T0 = 0.5). Bei 0.005 / 0.02 / 0.05 / 0.1 / 0.2 / 0.5 (Metropolis) liegt die beste Tour 3.1 / 2.3 / 1.75 / 1.4 / 1.4 / 9.5 % über der Schranke, die letzte 3.1 / 2.4 / 2.0 / 1.8 / 3.7 / 27.2 %: "
