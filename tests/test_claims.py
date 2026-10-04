@@ -355,7 +355,8 @@ def test_great_deluge_default_beats_a_too_small_anfangsabstand():
     good = cfg(rule="great_deluge", gd_t0=300.0, gd_t_end=2.0)
     bad = cfg(rule="great_deluge", gd_t0=280.0, gd_t_end=2.0)
     near(good["gap"], 3.2, 1.5)
-    assert bad["gap_sd"] > good["gap_sd"] or bad["gap"] > good["gap"]       # zu knapp am Startabstand: schwaecher und/oder wechselhafter
+    near(bad["gap"], 3.3, 1.5)                                              # dank automatischer Anhebung kaum schwaecher (3.3 statt 3.2 %) ...
+    assert bad["gap_sd"] > good["gap_sd"]                                    # ... aber etwas wechselhafter (sd 2.3 statt 1.8)
 
 
 def test_great_deluge_initial_level_is_auto_lifted_to_the_start_length_at_a_larger_instance():

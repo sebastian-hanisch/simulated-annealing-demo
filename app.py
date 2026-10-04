@@ -177,8 +177,8 @@ with st.sidebar:
     if rule == "great_deluge":
         gd_t0 = st.slider(
             "Anfangsabstand", C.GD_T0_MIN, C.GD_T0_MAX, float(st.session_state.get("gd_t0_slider", C.DEFAULT_GD_T0)), key="gd_t0_slider", step=C.GD_T0_STEP,
-            help="Wasserspiegel zu Beginn: Vielfache der mittleren Kantenlänge ÜBER der Schranke (absolute Tourlänge, nicht eine Änderung pro Zug). Bei einer zufälligen Startlösung liegt die Tour selbst schon 250 bis 280 Einheiten über der Schranke; "
-                 "ist der Anfangsabstand knapp darunter (280), kippt die Suche gelegentlich katastrophal (die Demo hebt den Spiegel dann automatisch auf die Startlänge an, damit das nicht passiert – aber die Kalibrierung gilt für 60 Stopps, nicht für viel größere Instanzen).",
+            help="Wasserspiegel zu Beginn: Vielfache der mittleren Kantenlänge ÜBER der Schranke (absolute Tourlänge, nicht eine Änderung pro Zug). Bei einer zufälligen Startlösung liegt die Tour selbst schon 220 bis 293 Einheiten über der Schranke (im Mittel 256); "
+                 "liegt der Anfangsabstand darunter, hebt die Demo den Spiegel automatisch auf die Startlänge an, damit die Suche nicht von Anfang an feststeckt. Great Deluge bleibt trotzdem empfindlich: einzelne Läufe können festfrieren, wenn der fallende Spiegel unter die aktuelle Tour sinkt (in der Messung je ein Lauf bei 290 und 320, nicht bei 280). Die Kalibrierung gilt für 60 Stopps, nicht für viel größere Instanzen.",
         )
         gd_t_end = st.slider(
             "Endabstand", C.GD_T_END_MIN, C.GD_T_END_MAX, float(st.session_state.get("gd_tend_slider", C.DEFAULT_GD_T_END)), key="gd_tend_slider", step=C.GD_T_END_STEP,
@@ -552,7 +552,7 @@ st.markdown(
 | **Die Theorie trägt** | Der logarithmische Plan garantiert das Optimum in unendlicher Zeit – im endlichen Budget ist er **3.4 %** über der Schranke gegen 1.4 % beim geometrischen. | (kein Nachfolger in der Linie: das ist die Grenze jeder Garantie ohne Zeitgrenze) |
 | **Ein Lauf genügt** | 20 Ketten auf einer Instanz liegen zwischen 0.1 und **5.1 %** über der Schranke (Standardabweichung 1.0 Prozentpunkte); 15 % der Ketten enden mehr als 2 % darüber. | **GRASP** und Wiederholungen (viele Läufe statt einer langen Kette), Hill Climbing mit Neustarts als Maßstab |
 | **Der Ringpuffer kommt nach (LAHC)** | Bei $L$ groß relativ zum Budget hinkt die Historie der tatsächlichen Konvergenz hinterher: **L=500 2.2 %**, L=700 **15.4 %**, L=1000 **44.2 %**, L=3000 **147 %** – kein Fehler in der Formel, sondern eine echte Grenze der Regel bei diesem Budget. | Kein direkter Nachfolger; die Lehre gilt sinngemäß auch für andere Ringpuffer-/Gedächtnisverfahren (**Tabu Search**) |
-| **Der Anfangsspiegel deckt die Startlücke (Great Deluge)** | Ein zu knapper Anfangsabstand ließe die Suche sofort feststecken; die Demo hebt ihn automatisch auf die Startlänge an – trotzdem bleibt das Ergebnis bei knapper Kalibrierung schwächer und wechselhafter (**3.2 %** kalibriert gegen streuender bei zu knappem Anfangsabstand). | (Kalibrierungsfrage, kein Verfahrensnachfolger) |
+| **Der Anfangsspiegel deckt die Startlücke (Great Deluge)** | Ein zu knapper Anfangsabstand ließe die Suche sofort feststecken; die Demo hebt ihn automatisch auf die Startlänge an – bei 280 statt 300 Einheiten bleibt das Ergebnis dann fast gleich (**3.3 %** gegen **3.2 %**, Streuung 2.3 gegen 1.8 Prozentpunkte). Empfindlich bleibt Great Deluge trotzdem: einzelne Läufe frieren bei manchen Anfangsabständen ein (290: im Mittel 11.4 %, 320: 25.1 %, je durch einen Lauf). | (Kalibrierungsfrage, kein Verfahrensnachfolger) |
 """
 )
 st.caption(

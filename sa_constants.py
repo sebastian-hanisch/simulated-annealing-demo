@@ -37,9 +37,10 @@ START_LABELS = {"random": "Zufällig", "nearest": "Nächster Nachbar"}
 #         "kommt nicht mehr nach": bei grossem L vergleicht ein Vorschlag noch lange mit einem sehr alten, schlechten Wert, wird also
 #         fast immer angenommen, und die Suche haengt statt zu konvergieren. Kein Fehler in der Formel, sondern eine echte Eigenschaft -
 #         die Grenze L <= 650 gilt fuer DIESES Budget/DIESE Instanzgroesse, nicht allgemein.
-#   Great Deluge: Anfangsabstand muss den Startabstand zur Schranke sicher uebersteigen (bei zufaelliger Startloesung, n=60: ~250-280
-#         Einheiten) - darunter (t0=280) kippt die Suche gelegentlich katastrophal (Streuung > Mittelwert). sa_algorithm.anneal() hebt
-#         den Anfangsspiegel zusaetzlich automatisch auf die Startlaenge an, falls t0 zu klein gewaehlt wird. Kalibriert fuer n=60 -
+#   Great Deluge: Anfangsabstand muss den Startabstand zur Schranke uebersteigen (bei zufaelliger Startloesung, n=60: 220-293
+#         Einheiten, Mittel 256). sa_algorithm.anneal() hebt den Anfangsspiegel automatisch auf die Startlaenge an, falls t0 zu klein
+#         gewaehlt wird; t0=280 liefert deshalb 3.3 % (sd 2.3) statt 3.2 % (sd 1.8) bei 300. Einzelne Laeufe frieren bei manchen t0 trotzdem
+#         ein (t0=290: 11.4 % im Mittel, 320: 25.1 %, je ein Lauf mit bis zu 123 % bzw. 318 %) - unabhaengig davon, ob t0 ueber oder unter dem Startabstand liegt. Kalibriert fuer n=60 -
 #         bei deutlich groesseren Instanzen (n=200) reicht das Budget nicht, um mit dem Spiegel Schritt zu halten (Luecke >800 %,
 #         siehe README "Was nicht funktioniert hat"); wie bei Metropolis werden t0/t_end nicht automatisch mit n skaliert.
 RULES = ("metropolis", "threshold", "great_deluge", "lahc")
@@ -83,8 +84,8 @@ PRESET_HELP = {
     "Late Acceptance Hill Climbing": "Listenlänge L = 500, kein Plan, kein Zufall in der Annahme: die beste Tour liegt im Mittel 2.2 % über der Schranke – knapp hinter Metropolis (1.4 %), klar vor Hill Climbing mit Neustarts (4.9 %).",
     "Threshold Accepting": "Dieselben T0/T_end wie Metropolis, aber deterministisch (Δ ≤ Schwelle statt Zufall): 2.7 % über der Schranke – der Zufall in der Annahme bringt gegenüber der reinen Schwelle noch etwas.",
     "Great Deluge": "Anfangsabstand 300, Endabstand 2 Einheiten über der Schranke: 3.2 % – am schwächsten der vier Regeln, aber immer noch klar vor Hill Climbing mit Neustarts (4.9 %).",
-    "Great Deluge (Anfangsabstand zu klein)": "Anfangsabstand 280 Einheiten – knapp unter dem typischen Startabstand einer zufälligen Tour (250 bis 280 Einheiten): die Demo hebt den Wasserspiegel automatisch auf die Startlänge an, sonst würde die Suche hier gelegentlich katastrophal kippen; "
-        "trotzdem bleibt das Ergebnis schwächer und wechselhafter als mit dem kalibrierten Anfangsabstand (300) – gelegentlich gewinnt sogar Hill Climbing mit Neustarts.",
+    "Great Deluge (Anfangsabstand zu klein)": "Anfangsabstand 280 Einheiten – im Bereich des Startabstands einer zufälligen Tour (220 bis 293 Einheiten je Instanz): wo die Starttour darüber liegt, hebt die Demo den Wasserspiegel automatisch auf die Startlänge an. "
+        "Im Mittel 3.3 % gegen 3.2 % beim kalibrierten Anfangsabstand (300), die Streuung ist etwas größer (2.3 gegen 1.8 Prozentpunkte); einzelne Läufe können schlechter ausfallen (bis 10.6 %), und gelegentlich gewinnt Hill Climbing mit Neustarts (4.9 %).",
 }
 # Urteile, die bei diesem Preset über verschiedene Instanzen und Ketten-Seeds vorkommen (jedes Preset wird über mehrere Instanzen x 2 Ketten gemessen)
 PRESET_EXPECTED_BANDS = {
