@@ -10,11 +10,11 @@ Geändert wird **eine Regel**: ein Zug, der die Tour um Δ km **verlängert**, w
 ```
 hill-climbing-demo (Wurzel: nur bergab, bleibt im ersten Optimum stecken)        [gebaut]
   ├─ simulated-annealing-demo (nimmt Verschlechterungen an, Abkühlplan)          [dieses Stück]
-  ├─ Iterated Local Search → VNS → ALNS  (stört ein Optimum; wechselt die Nachbarschaft; lernt Umbauten)   [nicht gebaut]
-  ├─ Tabu Search              (Gedächtnis gegen Rückwege)                        [nicht gebaut]
-  └─ GRASP                    (randomisierte Konstruktion, viele Starts)         [nicht gebaut]
+  ├─ Iterated Local Search → VNS → ALNS  (stört ein Optimum; wechselt die Nachbarschaft; lernt Umbauten)   [gebaut]
+  ├─ Tabu Search              (Gedächtnis gegen Rückwege)                        [gebaut]
+  └─ GRASP                    (randomisierte Konstruktion, viele Starts)         [gebaut]
 ```
-(Mit dem genetischen Algorithmus der Populations-Linie ergäbe sich später ein Memetischer Algorithmus.)
+(Mit dem genetischen Algorithmus der Populations-Linie ergibt sich der Memetische Algorithmus.)
 
 Ergebnis in Kürze: **bei gleichem Bewertungsbudget schlägt Simulated Annealing das Hill Climbing klar** – 60 Stopps, 200 Tausend Vorschläge: die beste Tour liegt im Mittel **1.4 %** über der Schranke, ein Hill-Climbing-Abstieg endet bei 7.9 %, **Hill Climbing mit Neustarts** (3.2 Abstiege, gleiches Budget) bei 4.9 %. Aber: der Temperaturbereich muss stimmen – **zu kalt** ist es ein Abstieg (7.1 %), **zu heiß am Ende** kommt die Kette nicht zur Ruhe (beste Tour 9.5 %, letzte 27.2 %) –,
 der Vorsprung vor den Neustarts **schrumpft mit dem Budget** (mit 2-opt + Or-opt bei 1 Million Vorschlägen fast gleichauf: 0.7 % gegen 1.0 %), und **das nötige Budget wächst stärker als linear mit der Größe** (bei 200 Stopps 7.7 %, mit 5 000 Vorschlägen je Stopp 4.1 %).
@@ -138,6 +138,4 @@ pytest tests/ -v
 
 ---
 
-Teil des [Operations-Research-Demo-Portfolios](https://sebastianhanisch.net/demos.html) von
-[Sebastian Hanisch](https://sebastianhanisch.net) – Operations Research und Machine Learning.
-Interesse an einer maßgeschneiderten Lösung? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html).
+Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net) – Operations Research und Machine Learning ([Über mich](https://sebastianhanisch.net/ueber-mich.html)). Mehr zur Reihe: [Trajektorien-Metaheuristiken: HC bis ALNS](https://sebastianhanisch.net/konzepte-trajektorien-metaheuristiken.html).

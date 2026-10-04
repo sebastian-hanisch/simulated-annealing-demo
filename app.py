@@ -182,7 +182,7 @@ with st.sidebar:
         )
         gd_t_end = st.slider(
             "Endabstand", C.GD_T_END_MIN, C.GD_T_END_MAX, float(st.session_state.get("gd_tend_slider", C.DEFAULT_GD_T_END)), key="gd_tend_slider", step=C.GD_T_END_STEP,
-            help="Wasserspiegel am Ende, Einheiten über der Schranke. Bei t0=300: Endabstand 2 ergibt 3.4 %, deutlich kleiner (unter 295) kippt die Suche katastrophal (Streuung größer als der Mittelwert), größer (6) verschwendet Vorschläge (7.3 %).",
+            help="Wasserspiegel am Ende, Einheiten über der Schranke. Bei t0=300: Endabstand 2 ergibt 3.2 %, kleiner (1) kippt die Suche katastrophal (37 %, Streuung größer als der Mittelwert), größer (6) verschwendet Vorschläge (7.1 %).",
         )
     else:
         gd_t0 = float(st.session_state.get("gd_t0_slider", C.DEFAULT_GD_T0))
@@ -556,7 +556,7 @@ st.markdown(
 """
 )
 st.caption(
-    "Die Nachbarn der Trajektorien-Metaheuristiken-Linie (noch nicht gebaut): Iterated Local Search mit VNS und ALNS, Tabu Search und GRASP; mit dem genetischen Algorithmus der Populations-Linie ergäbe sich später ein Memetischer Algorithmus. "
+    "Die Nachbarn der Trajektorien-Metaheuristiken-Linie: Iterated Local Search mit VNS und ALNS, Tabu Search und GRASP; mit dem genetischen Algorithmus der Populations-Linie ergibt sich der Memetische Algorithmus. "
     "Simulated Annealing ist die einfachste Erweiterung der Wurzel: eine Regel mehr, ein Regler mehr."
 )
 
@@ -596,6 +596,6 @@ Implementiert in `sa_algorithm.py` (Kette, Abkühlpläne), `sa_accept_rules.py` 
 st.markdown("---")
 st.caption(
     "Diese Demo ist Teil des Portfolios von [Sebastian Hanisch](https://sebastianhanisch.net) – "
-    "Operations Research und Machine Learning. Interesse an einer maßgeschneiderten Lösung für "
-    "Ihr Unternehmen? [Kontakt aufnehmen](https://sebastianhanisch.net/kontakt.html)"
+    "Operations Research und Machine Learning ([Über mich](https://sebastianhanisch.net/ueber-mich.html)). "
+    "Mehr zur Reihe: [Trajektorien-Metaheuristiken: HC bis ALNS](https://sebastianhanisch.net/konzepte-trajektorien-metaheuristiken.html)."
 )
