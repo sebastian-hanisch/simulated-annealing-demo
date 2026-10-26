@@ -79,6 +79,21 @@ wird trotzdem mit der Wahrscheinlichkeit $e^{-\\Delta/T}$ angenommen. Die **Temp
 Ob das den Hügeln entkommt, was es kostet und wovon es abhängt – Temperaturbereich, Budget, Abkühlplan, Nachbarschaft –, misst diese Demo, gegen dieselbe untere Schranke und dasselbe Bewertungsbudget wie das Hill Climbing, mit Siegen und Niederlagen.
 """
 )
+
+# erklaerseite:einfach:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/simulated-annealing-erklaert.json, nicht von Hand ändern)
+with st.expander("💬 In einfachen Worten"):
+    st.markdown(
+        """
+Stellen Sie sich einen Lieferwagen vor, der ab dem Depot mehrere Kunden anfährt. Gesucht ist die kürzeste Reihenfolge. Ein einfacher **Abstieg** ändert die Route Stück für Stück und behält eine Änderung nur, wenn die Route kürzer wird. Irgendwann hilft keine einzelne Änderung mehr, obwohl eine kürzere Route existiert: Die Route steckt in einem **lokalen Optimum**.
+
+**Simulated Annealing** (Abkühlen) ändert eine Regel. Eine Änderung, die die Route verlängert, wird trotzdem mit einer gewissen Wahrscheinlichkeit angenommen. Sie ist groß, solange die **Temperatur** hoch ist, und klein bei einer kleinen Verlängerung. Die Temperatur sinkt nach einem festen Plan, dem **Abkühlplan**, bis am Ende fast nur noch Verbesserungen gelten.
+
+Das Ergebnis hängt an der Einstellung: Ist die Temperatur von Anfang an zu niedrig, wirkt das Verfahren wie ein Abstieg. Ist sie am Ende noch zu hoch, kommt die Route nicht zur Ruhe. Die Demo zeigt beides und vergleicht mit einem Abstieg und mit Neustarts bei gleichem Rechenaufwand.
+
+[Ausführlich und verständlich erklärt, mit Fachteil](https://sebastianhanisch.net/simulated-annealing-erklaert.html)
+        """
+    )
+# erklaerseite:einfach:end
 st.caption(
     "Anders als die Fall-Demos im Portfolio, die an einem Anwendungsfall mehrere Verfahren vergleichen, zeigt diese Demo – zweites Stück der Trajektorien-Metaheuristiken-Linie der \"Konzepte\"-Reihe – **ein** Verfahren an einem wachsenden Beispiel. "
     "Die Linie hat keinen Konvergenzpunkt: Simulated Annealing ist **eine** Antwort auf die Schwäche der Wurzel (Hill Climbing); Iterated Local Search mit VNS und ALNS, Tabu Search und GRASP sind andere. "
@@ -386,7 +401,9 @@ st.markdown("---")
 st.markdown("## 🎯 Was die Kette gefunden hat")
 st.caption(
     "**Abstand zur Schranke:** Länge der Tour gegenüber einer unteren Schranke der kürzesten Rundtour (1-Baum, Held-Karp) in Prozent. Das wahre Optimum liegt bei gleichverteilten 60 Stopps im Mittel 0.5 % über der Schranke, der Abstand überschätzt die echte Lücke um diesen Betrag. "
-    "Ein Lauf ist eine Ziehung: die Ketten streuen (siehe Streuung unten), Vergleiche gelten für diesen Lauf."
+    "Ein Lauf ist eine Ziehung: die Ketten streuen (siehe Streuung unten), Vergleiche gelten für diesen Lauf. "
+    "Der Vergleich mit Hill Climbing gilt gegen einen Abstieg, der nach jedem Zug alle Nachbarn neu bewertet (voller Rescan). "
+    "Mit Kandidatenliste + Don't-Look-Bits (nur 2-opt gemessen) liegt Hill Climbing mit Neustarts bei 60 Stopps und 200 Tausend Vorschlägen bei 0.8 % und ist damit besser als Simulated Annealing (1.4 %); Details im Experiment „Budget“."
 )
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Beste Tour", f"{a.gap:.1f} %", delta=f"letzte Tour {a.final_gap:.1f} %", delta_color="off", help="Abstand zur Schranke der kürzesten je besuchten Tour; im Delta der der letzten Tour der Kette.")
@@ -563,6 +580,29 @@ st.caption(
 st.markdown("---")
 
 with st.expander("📐 Mathematische Formulierung"):
+    # erklaerseite:lesehilfe:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/simulated-annealing-erklaert.json, nicht von Hand ändern)
+    st.markdown(
+        r"""
+**Lesehilfe.** Gegeben sind ein Depot und $n$ Kundenstopps mit Entfernungen $d_{ij}$. Gesucht ist eine kürzeste Rundtour. Simulated Annealing schlägt zufällige Änderungen $\pi \to \pi'$ vor und nimmt eine Verlängerung $\Delta$ mit der Wahrscheinlichkeit $e^{-\Delta/T}$ an, während die Temperatur $T$ nach einem Plan sinkt.
+
+| Symbol | Bedeutung |
+|---|---|
+| $n$, $N$ | Zahl der Kundenstopps bzw. der Knoten einschließlich Depot ($N = n+1$) |
+| $d_{ij}$ | Entfernung zwischen den Knoten $i$ und $j$ |
+| $\pi$, $\pi'$ | aktuelle Tour bzw. vorgeschlagene Nachbartour |
+| $L(\pi)$ | Länge der Tour $\pi$ |
+| $\Delta$ | Längenänderung $L(\pi') - L(\pi)$; positiv heißt Verlängerung |
+| $T$ | Temperatur (Kontrollwert), gemessen in Vielfachen der mittleren Kantenlänge |
+| $T_0$, $T_{\text{end}}$ | Anfangs- bzw. Endtemperatur des Abkühlplans |
+| $K$, $k$ | Zahl der Temperaturstufen bzw. Nummer der aktuellen Stufe |
+| $w$ | untere Schranke für die Tourlänge (1-Baum-Schranke) |
+| $\bar d$ | mittlere Kantenlänge einer guten Tour, $w/N$ (Einheit der Temperatur) |
+| $p_T(\pi)$ | Wahrscheinlichkeit der Tour $\pi$ in einer langen Kette bei festem $T$ |
+
+[Schritt für Schritt erklärt, mit Herleitung und Literatur](https://sebastianhanisch.net/simulated-annealing-erklaert.html#fachleute)
+        """
+    )
+    # erklaerseite:lesehilfe:end
     st.markdown(
         r"""
 **Problem.** Kürzeste Rundtour über $N = n+1$ Knoten mit euklidischen Entfernungen $d_{ij}$; $L(\pi)$ ist die Länge einer Tour $\pi$.
