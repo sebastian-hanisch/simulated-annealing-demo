@@ -79,7 +79,7 @@ PRESET_HELP = {
     "Kleines Budget (25 Tausend)": "Nur 25 Tausend Vorschläge (ein Hill-Climbing-Abstieg braucht bei 60 Stopps etwa 74 Tausend bewertete Nachbarn): 4.1 % über der Schranke, der Abstieg endet bei 7.9 %.",
     "Großes Budget (1 Million)": "1 Million Vorschläge: 0.7 % über der Schranke; Hill Climbing mit Neustarts (14 Abstiege) erreicht bei gleichem Budget 2.5 %.",
     "2-opt + Or-opt": "Beide Nachbarschaften (je Vorschlag zufällig eine): 1.2 % über der Schranke; Hill Climbing endet mit dieser Nachbarschaft bei 3.7 %, mit Neustarts bei gleichem Budget bei 3.0 %.",
-    "Logarithmischer Plan": "Abkühlplan nach Hajek (T0 · ln 2 / ln(k + 2)), der in der Theorie das Optimum garantiert: 3.4 % über der Schranke statt 1.4 % beim geometrischen Plan - er kühlt zu langsam ab.",
+    "Logarithmischer Plan": "Abkühlplan nach Hajek (T0 · ln 2 / ln(k + 2)), der in der Theorie das Optimum garantiert: 3.4 % über der Schranke statt 1.4 % beim geometrischen Plan - er fällt anfangs rascher als der geometrische Plan und läuft fast durchgehend kalt.",
     "Große Instanz (200 Stopps, 1 Million)": "200 Stopps, 1 Million Vorschläge: die beste Tour liegt im Mittel 4.1 % über der Schranke, ein Hill-Climbing-Abstieg endet bei 9.5 % (er braucht etwa 4 Millionen bewertete Nachbarn).",
     "Late Acceptance Hill Climbing": "Listenlänge L = 500, kein Plan, kein Zufall in der Annahme: die beste Tour liegt im Mittel 2.2 % über der Schranke – knapp hinter Metropolis (1.4 %), klar vor Hill Climbing mit Neustarts (4.9 %).",
     "Threshold Accepting": "Dieselben T0/T_end wie Metropolis, aber deterministisch (Δ ≤ Schwelle statt Zufall): 2.7 % über der Schranke – der Zufall in der Annahme bringt gegenüber der reinen Schwelle noch etwas.",

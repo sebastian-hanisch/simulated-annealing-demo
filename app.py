@@ -158,7 +158,7 @@ with st.sidebar:
         schedule = st.selectbox(
             "Abkühlplan", list(C.SCHEDULE_LABELS), key="schedule_select", format_func=lambda k: C.SCHEDULE_LABELS[k],
             help="Wie die Temperatur (Metropolis) bzw. die Schwelle (Threshold Accepting) von T0 auf T_end fällt. Bei 200 Tausend Vorschlägen (60 Stopps, 2-opt, Metropolis) liegt die beste Tour geometrisch 1.4 %, linear 1.3 % und logarithmisch 3.4 % über der Schranke: geometrisch und linear sind gleichwertig, "
-                 "der logarithmische Plan (in der Theorie optimal, erreicht T_end nicht) kühlt zu langsam ab.",
+                 "der logarithmische Plan (in der Theorie optimal, erreicht T_end nicht) fällt anfangs rascher und läuft fast durchgehend kalt.",
         )
         st.session_state["_kept_schedule_select"] = schedule
     else:
